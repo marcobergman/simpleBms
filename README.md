@@ -2,7 +2,7 @@
 Design for a Battery Monitoring System, to be used for a 4-cell LiFePO4 battery on a sailing boat. 
 
 Highlights are:
-* Chargers are currently Victron devices (shore power, solar, engine through DC/DC) that have LiFePO4 profiles, but are unaware of each other's presence, the SOC or the cumulative current flowing into the cells. Rather than trying to make them work in unison, idea behind this design is to take control over the process, to enforce proper cycles and prevent memory effects, and, of course, over and under charging.
+* Chargers are currently Victron devices (shore power, solar, engine through DC/DC) that have LiFePO4 profiles, but are unaware of each other's presence, the SOC or the cumulative current flowing into the cells. Rather than trying to make them work in unison, idea behind this design is to take control over the process, to enforce proper 20%-90% cycles and prevent memory effects, and, of course, prevent over and under charging.
 * Solid State Relays to switch charger and/or load, depending on cell voltage, SOC and tail current.
 * Wemos D1 Mini sends [data to SignalK](https://github.com/marcobergman/ESP8266SignalkClient) through WIFI.
 * Current measuring to calculate SOC and tail current.
