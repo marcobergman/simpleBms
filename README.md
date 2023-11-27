@@ -1,8 +1,8 @@
 # Battery Monitoring System
-Design for a low-key, minimalistic Battery Monitoring System, to be used for a 4-cell LiFePO4 battery on a sailing boat. Well-known, well-documented and readily available parts.
+Design for a low-key, minimalistic Battery Monitoring System, to be used for a 4-cell LiFePO4 battery on a sailing boat. Well-known, well-documented and readily available parts, less is more.
 
 Highlights are:
-* Chargers are currently Victron devices (shore power, solar, engine through DC/DC) that have LiFePO4 profiles, but are unaware of each other's presence, the SOC or the cumulative current flowing into the cells. Rather than trying to make them work in unison, idea behind this design is to take control over the process, to enforce proper 20%-90% cycles and prevent memory effects, and, of course, prevent over and under charging.
+* Chargers are currently Victron devices (shore power, solar, engine through DC/DC) that have LiFePO4 profiles, but are unaware of each other's presence, the SOC or the cumulative current flowing into the cells. Rather than trying to make them work in unison, idea behind this design is to take control over the process, to enforce proper 20%-90% cycles to prevent memory effects, and, of course, prevent over and under charging.
 * Solid State Relays to switch charger and/or load, depending on cell voltage, SOC and tail current.
 * Wemos D1 Mini sends [data to SignalK](https://github.com/marcobergman/ESP8266SignalkClient) through WIFI.
 * Current measuring to calculate SOC and tail current.
@@ -12,5 +12,5 @@ Highlights are:
 ![image](https://github.com/marcobergman/bms/assets/17980560/288c4c5a-cf40-4fb4-bc63-0ceb95b42163)
 
 Questions:
-* Measuring current. Since ADS1115 can only measure positive voltage drop over shunt resistor, question arises how to measure negative current. Other option is to elevate the voltage drop with a stable reference voltage, but that is still prone to drift. Solution is the two anti-parallel differential amplifiers feeding into two different ADC input. Any more bright idea's?
-* Contrary to drawings, SSR relays only have Normal Open 'contacts'. Idea is that if Wemos fouls up, you can pull it from its socket and then the relays will be 'on'.
+* Measuring current. Since ADS1115 can only measure positive voltage drop over shunt resistor, question arises how to measure negative current. One option would be to elevate the voltage drop with a stable reference voltage, but that is still prone to drift. Hence this olution with two anti-parallel differential amplifiers feeding into two different ADC inputs. Any more bright idea's?
+* Contrary to drawings, [SSR relays](https://nl.aliexpress.com/item/32262347720.html) only have Normal Open 'contacts'. Idea is that if Wemos fouls up, you can pull it from its socket and then the relays will be 'on'.
