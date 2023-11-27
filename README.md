@@ -12,5 +12,5 @@ Highlights are:
 ![image](https://github.com/marcobergman/bms/assets/17980560/288c4c5a-cf40-4fb4-bc63-0ceb95b42163)
 
 Questions:
-* Measuring current. Since ADS1115 can only measure positive voltage drop over shunt resistor, question arises how to measure negative current. One option would be to elevate the voltage drop with a stable reference voltage, but that is still prone to drift. Hence this olution with two anti-parallel differential amplifiers feeding into two different ADC inputs. Any more bright idea's?
-* Contrary to drawings, [SSR relays](https://nl.aliexpress.com/item/32262347720.html) only have Normal Open 'contacts'. Idea is that if Wemos fouls up, you can pull it from its socket and then the relays will be 'on'.
+* Measuring current. Since ADS1115 can only measure positive voltage drop over shunt resistor, question arises how to measure negative current. One option would be to elevate the voltage drop with a stable reference voltage, but that is still prone to drift. Hence this olution with two anti-parallel differential amplifiers feeding into two different ADC inputs. Any more bright ideas?
+* Contrary to drawings, [SSR relays](https://nl.aliexpress.com/item/32262347720.html) only have Normal Open 'contacts'. Idea is that if Wemos fouls up, you can pull it from its socket and then the relays will be 'Closed'.
