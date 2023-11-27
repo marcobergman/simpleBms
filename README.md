@@ -14,3 +14,4 @@ Highlights are:
 Questions:
 * Measuring current. Since ADS1115 can only measure positive voltage drop over shunt resistor, question arises how to measure negative current. One option would be to elevate the voltage drop with a stable reference voltage, but that is still prone to drift. Hence this olution with two anti-parallel differential amplifiers feeding into two different ADC inputs. Any more bright ideas?
 * Contrary to drawings, [SSR relays](https://nl.aliexpress.com/item/32262347720.html) only have Normal Open 'contacts'. Idea is that if Wemos fouls up, you can pull it from its socket and then the relays will be 'Closed'.
+* BMS parameters can be set in the Wemos EEPROM. Current idea is to set those values in SignalK paths and let the Wemos compare it to its stored values, and replace those stored values if they are changed. Is there a better way of doing this?
