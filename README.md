@@ -1,5 +1,5 @@
 # Battery Monitoring System
-Design for a low-key, minimalistic Battery Monitoring System, to be used for a 4-cell LiFePO4 battery on a sailing boat. 
+Design for a low-key, minimalistic Battery Monitoring System, to be used for a 4-cell LiFePO4 battery on a sailing boat. Well-known, well-documented and readily available parts.
 
 Highlights are:
 * Chargers are currently Victron devices (shore power, solar, engine through DC/DC) that have LiFePO4 profiles, but are unaware of each other's presence, the SOC or the cumulative current flowing into the cells. Rather than trying to make them work in unison, idea behind this design is to take control over the process, to enforce proper 20%-90% cycles and prevent memory effects, and, of course, prevent over and under charging.
