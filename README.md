@@ -6,6 +6,7 @@ Highlights are:
 * Solid State Relays to switch charger and/or load, depending on cell voltage, SOC and tail current.
 * Wemos D1 Mini sends [data to SignalK](https://github.com/marcobergman/ESP8266SignalkClient) through WIFI.
 * Current measuring to calculate SOC and tail current.
+* Temperature measuring to prevent charging onder zero celcius, overheating, and to be able to respond to temperature drift of measurements.
 * No active or passive cell balancing. That's a later phase. Let's first see if that is needed.
 
 ![image](https://github.com/marcobergman/bms/assets/17980560/288c4c5a-cf40-4fb4-bc63-0ceb95b42163)
