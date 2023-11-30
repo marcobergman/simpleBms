@@ -16,7 +16,7 @@ Highlights are:
 Data sheets
 * [INA228](https://www.ti.com/document-viewer/INA228/datasheet/GUID-7CC9DEF5-A5FE-412D-B339-B6B8A1E08DE2#TITLE-SBOSA20SBOS54764917)
 * [INS1115](https://www.ti.com/document-viewer/ADS1115/datasheet/typical-application-sbas4449076#SBAS4449076)
-Questions:
 
+Questions:
 * BMS parameters can be set in the Wemos EEPROM. Current idea is to set those values in SignalK paths and let the Wemos compare it to its stored values, and replace those stored values if they are changed. Is there a better way of doing this?
 * I think the voltage measuring could be done smarter. All multi-channel AD converters I can find are limited to their input not exceeding the Vdd, which forces me to use voltage dividers, and even with high-precision resistors it would require calibration. Surely there's better solutions for that?
