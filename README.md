@@ -15,7 +15,7 @@ Highlights are:
 
 Data sheets
 * [INA228](https://www.ti.com/document-viewer/INA228/datasheet/GUID-7CC9DEF5-A5FE-412D-B339-B6B8A1E08DE2#TITLE-SBOSA20SBOS54764917) ([library](https://github.com/adafruit/Adafruit_INA228))
-* [ADS1115](https://www.ti.com/document-viewer/ADS1115/datasheet/typical-application-sbas4449076#SBAS4449076) ([library](https://github.com/wollewald/ADS1115_WE))
+* [ADS1115](https://www.ti.com/document-viewer/ADS1115/datasheet/typical-application-sbas4449076#SBAS4449076) ([library](https://github.com/adafruit/Adafruit_ADS1X15))
 * [DS18B20](https://www.analog.com/media/en/technical-documentation/data-sheets/ds18b20.pdf) ([library](https://github.com/milesburton/Arduino-Temperature-Control-Library))
 
 Questions:
