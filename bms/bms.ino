@@ -13,7 +13,7 @@
 
 // User configuration starts here
 String wifiSsid        =  "openplotter";
-String wifiPassword    =  "12345678";
+String wifiPassword    =  "Pandan123!";
 String signalkIpString =  "10.10.10.1";
 int    signalkUdpPort  =  30330;
 String signalkSource   =  "DIY BMS";
@@ -52,13 +52,18 @@ float dischargeDisconnectCurrent = 60;
 
 // For setRelais():
 const int CHARGERELAIS = 0; // D3 = GPIO0
-const int DISCHARGERELAIS = 16; // D0 = GPIO16 'LOAD'
+const int DISCHARGERELAIS = 2; // D4 = GPIO2 'LOAD'
 const int CONNECT = 1;
 const int DISCONNECT = 0;
 
 String bmsStatus = "OK";
 String chargeStatus = "";
 String dischargeStatus = "";
+
+float cell0Voltage = 0;
+float cell1Voltage = 0;
+float cell2Voltage = 0;
+float cell3Voltage = 0;
 
 WiFiClient client;
 WiFiUDP udp;
@@ -130,11 +135,12 @@ void sendBmsConfig () {
 }
 
 
-void sendBmsState(float packSoc, float packCurrent, String bmsStatus) {
+void sendBmsState(float packSoc, float packCurrent, String bmsStatus, float packTemp) {
   // send bsm status to SignalK
   String value = "{";
   value = value  + "\"packSoc\": " + String(packSoc) +", ";
   value = value  + "\"packCurrent\": " + String(packCurrent) +", ";
+  value = value  + "\"packTemp\": " + String(packTemp) +", ";
   value = value  + "\"bmsStatus\": \"" + String(bmsStatus) + "\"";
   value = value + "}";
 
@@ -182,6 +188,10 @@ void setup() {
   pinMode(CHARGERELAIS, OUTPUT);
   ads.setGain(GAIN_TWO);
   ads.begin();
+  cell0Voltage = readCellVoltage(0);
+  cell1Voltage = readCellVoltage(1);
+  cell2Voltage = readCellVoltage(2);
+  cell3Voltage = readCellVoltage(3);
 
   bool x = timer.attachInterruptInterval(TIMER_INTERVAL_MS * 1000, TimerHandler);
 }
@@ -268,12 +278,21 @@ void setRelais (int gpio, int value) {
   //Serial.println ("setRelais: " + String(gpio) + ": " + String(value));
 }
 
+int timestamp = millis();
+
+void T(String comment){
+  Serial.print (millis() - timestamp);
+  Serial.println (" ms; now at " + comment);
+  timestamp = millis();
+}
+
 void loop() {
 
-  float cell0Voltage = readCellVoltage(0);
-  float cell1Voltage = readCellVoltage(1);
-  float cell2Voltage = readCellVoltage(2);
-  float cell3Voltage = readCellVoltage(3);
+  // each measurement takes 32ms:
+  cell0Voltage = 0.9 * cell0Voltage + 0.1 * readCellVoltage(0);
+  cell1Voltage = 0.9 * cell1Voltage + 0.1 * readCellVoltage(1);
+  cell2Voltage = 0.9 * cell2Voltage + 0.1 * readCellVoltage(2);
+  cell3Voltage = 0.9 * cell3Voltage + 0.1 * readCellVoltage(3);
 
   // for now, only 1 cell ;-)
   //cell3Voltage = cell3Voltage - cell2Voltage;
@@ -418,17 +437,17 @@ void loop() {
 
   bmsStatus = chargeStatus + dischargeStatus;
 
-  Serial.println ("adc[0] = " + String(cell0Voltage) + "; bmsStatus = " + bmsStatus);
+  Serial.println ("adc[0] = " + String(cell0Voltage, 6) + "; bmsStatus = " + bmsStatus);
 
   sendCellVoltages(cell0Voltage, cell1Voltage, cell2Voltage, cell3Voltage);
 
-  sendBmsState(packSoc, packCurrent, bmsStatus);
+  sendBmsState(packSoc, packCurrent, bmsStatus, packTemp);
 
   if (mustSendConfig == 1) {
     sendBmsConfig();
     reportWifi();
     mustSendConfig = 0;
   }
-  
+
   delay(1000);
 }
