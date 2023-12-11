@@ -60,11 +60,14 @@ String bmsStatus = "OK";
 String chargeStatus = "";
 String dischargeStatus = "";
 
-
 WiFiClient client;
 WiFiUDP udp;
+const String wifiStatus[8] = {"WL_IDLE_STATUS", "WL_NO_SSID_AVAIL", "unknown", "WL_CONNECTED", "WL_CONNECT_FAILED", "", "WL_CONNECT_WRONG_PASSWORD", "WL_DISCONNECTED"};
 
 Adafruit_ADS1115 ads;
+
+ESP8266Timer timer;
+#define TIMER_INTERVAL_MS 20000
 
 IPAddress signalkIp;
 bool x = signalkIp.fromString(signalkIpString);
@@ -75,7 +78,7 @@ int mustSendConfig = 1;
 
 
 void startWifi() {
-  Serial.print("\nConnecting");
+  Serial.println("\nWifi connecting...");
   WiFi.mode(WIFI_STA);
   WiFi.begin(wifiSsid, wifiPassword);
 }
@@ -141,6 +144,19 @@ void sendBmsState(float packSoc, float packCurrent, String bmsStatus) {
 }
 
 
+void reportWifi() {
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.print ("Wifi connected with IP address ");
+    Serial.println (WiFi.localIP());
+  }
+  else {
+    Serial.printf ("WIFI Connection status: %d: ", WiFi.status());
+    Serial.println (wifiStatus[WiFi.status()]);
+    WiFi.printDiag(Serial);
+  }
+}
+
+
 void signalkSendValue (String path, String value, String units) {
   // send one particular value to signalk. Every now and then, set the 'units' metadata.
   String message = "{\"updates\":[{\"$source\": \""+ signalkSource + "\", \"values\":[{\"path\":\"" + path + "\",\"value\":" + value + "}]}]}";
@@ -152,9 +168,6 @@ void signalkSendValue (String path, String value, String units) {
   sendSignalkMessage (message);
 }
 
-
-ESP8266Timer timer;
-#define TIMER_INTERVAL_MS 10000
 
 void IRAM_ATTR TimerHandler() {
   mustSendConfig = 1;
@@ -175,7 +188,7 @@ void setup() {
 
 
 float interpolate (float cellVoltage, float x, float y, float a, float b) {
-  // temporary
+  // temporary, see readPckSoc()
   float d=y-x;
   float e=b-a;
   return ((cellVoltage - x) / d) * e + a;
@@ -413,6 +426,7 @@ void loop() {
 
   if (mustSendConfig == 1) {
     sendBmsConfig();
+    reportWifi();
     mustSendConfig = 0;
   }
   
