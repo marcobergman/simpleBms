@@ -13,7 +13,7 @@
 
 // User configuration starts here
 String wifiSsid        =  "openplotter";
-String wifiPassword    =  "Pandan123!";
+String wifiPassword    =  "12345678";
 String signalkIpString =  "10.10.10.1";
 int    signalkUdpPort  =  30330;
 String signalkSource   =  "DIY BMS";
