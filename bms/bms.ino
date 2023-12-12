@@ -51,8 +51,9 @@ float dischargeDisconnectCurrent = 60;
 // User configuration ends here
 
 // For setRelais():
-const int CHARGERELAIS = 0; // D3 = GPIO0
-const int DISCHARGERELAIS = 2; // D4 = GPIO2 'LOAD'
+const int CHARGERELAIS = 13; // D7 = GPIO13
+const int DISCHARGERELAIS = 15; // D8 = GPI15 'LOAD'
+const int LED = 2; // GPIO2 = LED
 const int CONNECT = 1;
 const int DISCONNECT = 0;
 
@@ -72,14 +73,52 @@ const String wifiStatus[8] = {"WL_IDLE_STATUS", "WL_NO_SSID_AVAIL", "unknown", "
 Adafruit_ADS1115 ads;
 
 ESP8266Timer timer;
-#define TIMER_INTERVAL_MS 20000
+#define TIMER_INTERVAL_MS 10000
 
 IPAddress signalkIp;
 bool x = signalkIp.fromString(signalkIpString);
 
 int i = 1; // metadata counter
 
-int mustSendConfig = 1;
+int mustSendConfig = 0;
+int mustTestWifi = 0;
+int mustWakeWifi = 0;
+int wifiAsleep = 0;
+int bmsClock = 0;
+
+
+void IRAM_ATTR TimerHandler() {
+  bmsClock += 1;
+
+  if (bmsClock % 6 == 0) {
+    mustTestWifi = 1;
+  }
+  if ((bmsClock + 4) % 5 == 0) {
+    mustSendConfig = 1;
+  }
+  if (bmsClock % 6 == 0 && wifiAsleep == 1) {
+    mustWakeWifi = 1;
+  }
+}
+
+
+void setup() {
+  Serial.begin(115200);
+  startWifi();
+  udp.begin(33333);
+  pinMode(DISCHARGERELAIS, OUTPUT);
+  pinMode(CHARGERELAIS, OUTPUT);
+  pinMode(LED, OUTPUT);
+  ads.setGain(GAIN_TWO);
+  ads.begin();
+  delay(100);
+  cell0Voltage = readCellVoltage(0);
+  cell1Voltage = readCellVoltage(1);
+  cell2Voltage = readCellVoltage(2);
+  cell3Voltage = readCellVoltage(3);
+
+  bool x = timer.attachInterruptInterval(TIMER_INTERVAL_MS * 1000, TimerHandler);
+}
 
 
 void startWifi() {
@@ -88,6 +127,34 @@ void startWifi() {
   WiFi.begin(wifiSsid, wifiPassword);
 }
 
+
+void testWifi() {
+  if (wifiAsleep == 1) {
+    return;
+  }
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.print ("Wifi connected with IP address ");
+    Serial.println (WiFi.localIP());
+  }
+  else if (WiFi.status() == WL_NO_SSID_AVAIL) {
+    Serial.println ("Wifi base station not found. Wifi going to sleep to preserve energy.");
+    WiFi.setSleepMode (WIFI_MODEM_SLEEP);
+    WiFi.forceSleepBegin ();
+    wifiAsleep = 1;
+  }
+  else {
+    Serial.printf ("WIFI Connection status: %d: ", WiFi.status());
+    Serial.println (wifiStatus[WiFi.status()]);
+    WiFi.printDiag(Serial);
+  }
+}
+
+void wakeWifi() {
+  Serial.println ("Wifi waking up.");
+  WiFi.forceSleepWake();
+  wifiAsleep = 0;
+  bmsClock = 5;
+}
 
 void sendSignalkMessage (String message) {
   if (WiFi.status() != WL_CONNECTED) {
@@ -102,6 +169,7 @@ void sendSignalkMessage (String message) {
 
 void sendBmsConfig () {
   // send configuration parameters to SignalK
+  Serial.println ("Sending BMS config parameters.");
   String value = "{";
   value = value  + "\"chargeDisconnectVoltage\": " + String(chargeDisconnectVoltage) +", ";
   value = value  + "\"chargeDisconnectSoc\": " + String(chargeDisconnectSoc) +", ";
@@ -150,19 +218,6 @@ void sendBmsState(float packSoc, float packCurrent, String bmsStatus, float pack
 }
 
 
-void reportWifi() {
-  if (WiFi.status() == WL_CONNECTED) {
-    Serial.print ("Wifi connected with IP address ");
-    Serial.println (WiFi.localIP());
-  }
-  else {
-    Serial.printf ("WIFI Connection status: %d: ", WiFi.status());
-    Serial.println (wifiStatus[WiFi.status()]);
-    WiFi.printDiag(Serial);
-  }
-}
-
-
 void signalkSendValue (String path, String value, String units) {
   // send one particular value to signalk. Every now and then, set the 'units' metadata.
   String message = "{\"updates\":[{\"$source\": \""+ signalkSource + "\", \"values\":[{\"path\":\"" + path + "\",\"value\":" + value + "}]}]}";
@@ -172,28 +227,6 @@ void signalkSendValue (String path, String value, String units) {
     i = 99;
   }
   sendSignalkMessage (message);
-}
-
-
-void IRAM_ATTR TimerHandler() {
-  mustSendConfig = 1;
-}
-
-
-void setup() {
-  Serial.begin(115200);
-  startWifi();
-  udp.begin(33333);
-  pinMode(DISCHARGERELAIS, OUTPUT);
-  pinMode(CHARGERELAIS, OUTPUT);
-  ads.setGain(GAIN_TWO);
-  ads.begin();
-  cell0Voltage = readCellVoltage(0);
-  cell1Voltage = readCellVoltage(1);
-  cell2Voltage = readCellVoltage(2);
-  cell3Voltage = readCellVoltage(3);
-
-  bool x = timer.attachInterruptInterval(TIMER_INTERVAL_MS * 1000, TimerHandler);
 }
 
 
@@ -275,7 +308,19 @@ void setRelais (int gpio, int value) {
     else {
       digitalWrite(gpio, LOW);
     }
-  //Serial.println ("setRelais: " + String(gpio) + ": " + String(value));
+}
+
+void blink() {
+  const int blinkMs = 2;
+  digitalWrite(LED, LOW);
+  delay (blinkMs);
+  digitalWrite(LED, HIGH);
+  if (wifiAsleep == 0){
+    delay (100);
+    digitalWrite(LED, LOW);
+    delay (blinkMs);
+    digitalWrite(LED, HIGH);
+  }
 }
 
 int timestamp = millis();
@@ -287,12 +332,13 @@ void T(String comment){
 }
 
 void loop() {
+  const float dampingFactor = 0.8;
 
   // each measurement takes 32ms:
-  cell0Voltage = 0.9 * cell0Voltage + 0.1 * readCellVoltage(0);
-  cell1Voltage = 0.9 * cell1Voltage + 0.1 * readCellVoltage(1);
-  cell2Voltage = 0.9 * cell2Voltage + 0.1 * readCellVoltage(2);
-  cell3Voltage = 0.9 * cell3Voltage + 0.1 * readCellVoltage(3);
+  cell0Voltage = dampingFactor * cell0Voltage + (1 - dampingFactor) * readCellVoltage(0);
+  cell1Voltage = dampingFactor * cell1Voltage + (1 - dampingFactor) * readCellVoltage(1);
+  cell2Voltage = dampingFactor * cell2Voltage + (1 - dampingFactor) * readCellVoltage(2);
+  cell3Voltage = dampingFactor * cell3Voltage + (1 - dampingFactor) * readCellVoltage(3);
 
   // for now, only 1 cell ;-)
   //cell3Voltage = cell3Voltage - cell2Voltage;
@@ -445,9 +491,18 @@ void loop() {
 
   if (mustSendConfig == 1) {
     sendBmsConfig();
-    reportWifi();
     mustSendConfig = 0;
   }
+  if (mustTestWifi == 1) {
+    testWifi();
+    mustTestWifi = 0;
+  }
+  if (mustWakeWifi == 1) {
+    wakeWifi();
+    mustWakeWifi = 0;
+  }
+
+  blink();
 
   delay(1000);
 }
