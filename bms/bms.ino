@@ -25,11 +25,11 @@ float valueRef[4] = {14161, 14161, 14161, 14161};
 
 // BMS parameters
 float chargeDisconnectVoltage = 3.6;
-float chargeDisconnectSoc = 90;
+float chargeDisconnectSoc = 101;
 float chargeDisconnectTemp = 3;
 float chargeDisconnectCurrent = 30;
 float chargeReconnectVoltage = 3.5;
-float chargeReconnectSoc = 30;
+float chargeReconnectSoc = 80;
 float chargeReconnectTemp = 4;
 String chargeReconnectCurrent = "MANUAL";
 float chargeAlarmVoltage = 3.4;
@@ -48,6 +48,13 @@ float dischargeDisconnectVoltage = 3.1;
 float dischargeDisconnectSoc = 20;
 float dischargeDisconnectTemp = 70;
 float dischargeDisconnectCurrent = 60;
+
+float calibrationVoltageMin = 3.20;
+float calibrationVoltageMax = 3.40;
+float calibrationSocMin = 17;
+float calibrationSocMax = 100;
+float packCapacity = 280; // Ah
+float actualDischarge = 140; // Ah
 // User configuration ends here
 
 // For setRelais():
@@ -65,6 +72,11 @@ float cell0Voltage = 0;
 float cell1Voltage = 0;
 float cell2Voltage = 0;
 float cell3Voltage = 0;
+
+float maxCellVoltage = 0;
+float minCellVoltage = 0;
+
+float packDischargeCurrent = 0;
 
 WiFiClient client;
 WiFiUDP udp;
@@ -203,11 +215,11 @@ void sendBmsConfig () {
 }
 
 
-void sendBmsState(float packSoc, float packCurrent, String bmsStatus, float packTemp) {
+void sendBmsState(float packSoc, float packDischargeCurrent, String bmsStatus, float packTemp) {
   // send bsm status to SignalK
   String value = "{";
   value = value  + "\"packSoc\": " + String(packSoc) +", ";
-  value = value  + "\"packCurrent\": " + String(packCurrent) +", ";
+  value = value  + "\"packDischargeCurrent\": " + String(packDischargeCurrent) +", ";
   value = value  + "\"packTemp\": " + String(packTemp) +", ";
   value = value  + "\"bmsStatus\": \"" + String(bmsStatus) + "\"";
   value = value + "}";
@@ -265,9 +277,9 @@ float readPackTemp() {
   return 15;
 }
 
-float readPackCurrent() {
+float readPackDischargeCurrent() {
   // temporary, awaiting power management chip
-  return 3.55;
+  return 3.6; 
 }
 
 float readCellVoltage(int index) {
@@ -331,6 +343,24 @@ void T(String comment){
   timestamp = millis();
 }
 
+void checkCalibration() {
+  actualDischarge = actualDischarge + packDischargeCurrent;
+  if (maxCellVoltage > calibrationVoltageMax && packDischargeCurrent > 0) { // not charging
+    actualDischarge = 0;
+    Serial.println("Defining pack to be at " + String(calibrationSocMax) + " %.");
+  }
+  if (minCellVoltage < calibrationVoltageMin && packDischargeCurrent > 0) { // not charging
+    packCapacity = actualDischarge / (calibrationSocMax - calibrationSocMin) * 100;
+    Serial.println("Setting packCapacity to " + String (packCapacity, 1) + "Ah.");
+  }
+}
+
+float readPackSoc() {
+  float soc;
+  soc = (packCapacity - actualDischarge) / packCapacity * 100;
+  return soc;
+}
+
 void loop() {
   const float dampingFactor = 0.8;
 
@@ -345,12 +375,15 @@ void loop() {
   //cell2Voltage = cell2Voltage - cell1Voltage;
   //cell1Voltage = cell1Voltage - cell0Voltage;
 
-  float maxCellVoltage = maxVoltage(cell0Voltage, cell1Voltage, cell2Voltage, cell3Voltage);
-  float minCellVoltage = minVoltage(cell0Voltage, cell1Voltage, cell2Voltage, cell3Voltage);
+  maxCellVoltage = maxVoltage(cell0Voltage, cell1Voltage, cell2Voltage, cell3Voltage);
+  minCellVoltage = minVoltage(cell0Voltage, cell1Voltage, cell2Voltage, cell3Voltage);
+
+  checkCalibration();
 
   float packSoc = readPackSoc(cell0Voltage);  // Temporarily provide cell voltage to fake presence of power management chip
+  packSoc = readPackSoc();  // Temporarily provide cell voltage to fake presence of power management chip
   float packTemp = readPackTemp();
-  float packCurrent = readPackCurrent();
+  packDischargeCurrent = readPackDischargeCurrent();
 
   // Charge reconnect
   if (chargeStatus == "chargeDisconnectVoltage" && maxCellVoltage < chargeReconnectVoltage ) {
@@ -362,7 +395,7 @@ void loop() {
   if (chargeStatus == "chargeDisconnectTemp" && packTemp > chargeReconnectTemp) {
     chargeStatus = "";
   }
-  //if (chargeStatus == "chargeDisconnectCurrent" && packCurrent < chargeReconnectCurrent) {
+  //if (chargeStatus == "chargeDisconnectCurrent" && packDischargeCurrent < chargeReconnectCurrent) {
   //   chargeStatus = "";
   //}
 
@@ -376,7 +409,7 @@ void loop() {
   if (chargeStatus == "chargeAlarmTemp" && packTemp > chargeAlarmTemp) {
     chargeStatus = "";
   }
-  if (chargeStatus == "chargeAlarmCurrent" && packCurrent < chargeAlarmCurrent) {
+  if (chargeStatus == "chargeAlarmCurrent" && packDischargeCurrent < chargeAlarmCurrent) {
     chargeStatus = "";
   }
 
@@ -390,7 +423,7 @@ void loop() {
   if (chargeStatus == "" && packTemp < chargeAlarmTemp) {
     chargeStatus = "chargeAlarmTemp";
   }
-  if (chargeStatus == "" && packCurrent > chargeAlarmCurrent) {
+  if (chargeStatus == "" && packDischargeCurrent > chargeAlarmCurrent) {
     chargeStatus = "chargeAlarmCurrent";
   }
 
@@ -407,7 +440,7 @@ void loop() {
     chargeStatus = "chargeDisconnectTemp";
     setRelais (CHARGERELAIS, DISCONNECT);
   }
-  if (packCurrent > chargeDisconnectCurrent) {
+  if (packDischargeCurrent > chargeDisconnectCurrent) {
     chargeStatus = "chargeDisconnectCurrent";
     setRelais (CHARGERELAIS, DISCONNECT);
   }
@@ -423,7 +456,7 @@ void loop() {
   if (dischargeStatus == "dischargeDisconnectTemp" && packTemp < dischargeReconnectTemp) {
     dischargeStatus = "";
   }
-  //if (dischargeStatus == "dischargeDisconnectCurrent" && packCurrent > - dischargeReconnectCurrent) {
+  //if (dischargeStatus == "dischargeDisconnectCurrent" && packDischargeCurrent > - dischargeReconnectCurrent) {
   //  dischargeStatus = "";
   //}
 
@@ -437,7 +470,7 @@ void loop() {
   if (dischargeStatus == "dischargeAlarmTemp" && packTemp < dischargeAlarmTemp) {
     dischargeStatus = "";
   }
-  if (dischargeStatus == "dischargeAlarmCurrent" && packCurrent > - dischargeAlarmCurrent) {
+  if (dischargeStatus == "dischargeAlarmCurrent" && packDischargeCurrent > - dischargeAlarmCurrent) {
     dischargeStatus = "";
   }
 
@@ -451,7 +484,7 @@ void loop() {
   if (dischargeStatus == "" && packTemp > dischargeAlarmTemp) {
     dischargeStatus = "dischargeAlarmTemp";
   }
-  if (dischargeStatus == "" && packCurrent < - dischargeAlarmCurrent) {
+  if (dischargeStatus == "" && packDischargeCurrent < - dischargeAlarmCurrent) {
     dischargeStatus = "dischargeAlarmCurrent";
   }
 
@@ -468,7 +501,7 @@ void loop() {
     dischargeStatus = "dischargeDisconnectTemp";
     setRelais (DISCHARGERELAIS, DISCONNECT);
   }
-  if (packCurrent < - dischargeDisconnectCurrent) {
+  if (packDischargeCurrent < - dischargeDisconnectCurrent) {
     dischargeStatus = "dischargeDisconnectCurrent";
     setRelais (DISCHARGERELAIS, DISCONNECT);
   }
@@ -487,7 +520,7 @@ void loop() {
 
   sendCellVoltages(cell0Voltage, cell1Voltage, cell2Voltage, cell3Voltage);
 
-  sendBmsState(packSoc, packCurrent, bmsStatus, packTemp);
+  sendBmsState(packSoc, packDischargeCurrent, bmsStatus, packTemp);
 
   if (mustSendConfig == 1) {
     sendBmsConfig();
