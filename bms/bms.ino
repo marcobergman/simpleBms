@@ -92,10 +92,10 @@ bool x = signalkIp.fromString(signalkIpString);
 
 int i = 1; // metadata counter
 
-int mustSendConfig = 0;
-int mustTestWifi = 0;
-int mustWakeWifi = 0;
-int wifiAsleep = 0;
+bool mustSendConfig = false;
+bool mustTestWifi = false;
+bool mustWakeWifi = false;
+bool wifiAsleep = false;
 int bmsClock = 0;
 
 
@@ -103,13 +103,13 @@ void IRAM_ATTR TimerHandler() {
   bmsClock += 1;
 
   if (bmsClock % 6 == 0) {
-    mustTestWifi = 1;
+    mustTestWifi = true;
   }
   if ((bmsClock + 4) % 5 == 0) {
-    mustSendConfig = 1;
+    mustSendConfig = true;
   }
-  if (bmsClock % 6 == 0 && wifiAsleep == 1) {
-    mustWakeWifi = 1;
+  if (bmsClock % 6 == 0 && wifiAsleep) {
+    mustWakeWifi = true;
   }
 }
 
@@ -141,7 +141,7 @@ void startWifi() {
 
 
 void testWifi() {
-  if (wifiAsleep == 1) {
+  if (wifiAsleep) {
     return;
   }
   if (WiFi.status() == WL_CONNECTED) {
@@ -152,7 +152,7 @@ void testWifi() {
     Serial.println ("Wifi base station not found. Wifi going to sleep to preserve energy.");
     WiFi.setSleepMode (WIFI_MODEM_SLEEP);
     WiFi.forceSleepBegin ();
-    wifiAsleep = 1;
+    wifiAsleep = true;
   }
   else {
     Serial.printf ("WIFI Connection status: %d: ", WiFi.status());
@@ -164,7 +164,7 @@ void testWifi() {
 void wakeWifi() {
   Serial.println ("Wifi waking up.");
   WiFi.forceSleepWake();
-  wifiAsleep = 0;
+  wifiAsleep = false;
   bmsClock = 5;
 }
 
@@ -327,7 +327,7 @@ void blink() {
   digitalWrite(LED, LOW);
   delay (blinkMs);
   digitalWrite(LED, HIGH);
-  if (wifiAsleep == 0){
+  if (!wifiAsleep){
     delay (100);
     digitalWrite(LED, LOW);
     delay (blinkMs);
@@ -343,6 +343,7 @@ void T(String comment){
   timestamp = millis();
 }
 
+
 void checkCalibration() {
   actualDischarge = actualDischarge + packDischargeCurrent;
   if (maxCellVoltage > calibrationVoltageMax && packDischargeCurrent > 0) { // not charging
@@ -355,11 +356,13 @@ void checkCalibration() {
   }
 }
 
+
 float readPackSoc() {
   float soc;
   soc = (packCapacity - actualDischarge) / packCapacity * 100;
   return soc;
 }
+
 
 void loop() {
   const float dampingFactor = 0.8;
@@ -522,17 +525,17 @@ void loop() {
 
   sendBmsState(packSoc, packDischargeCurrent, bmsStatus, packTemp);
 
-  if (mustSendConfig == 1) {
+  if (mustSendConfig) {
     sendBmsConfig();
-    mustSendConfig = 0;
+    mustSendConfig = false;
   }
-  if (mustTestWifi == 1) {
+  if (mustTestWifi) {
     testWifi();
-    mustTestWifi = 0;
+    mustTestWifi = false;
   }
-  if (mustWakeWifi == 1) {
+  if (mustWakeWifi) {
     wakeWifi();
-    mustWakeWifi = 0;
+    mustWakeWifi = false;
   }
 
   blink();
