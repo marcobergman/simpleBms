@@ -19,9 +19,10 @@ int    signalkUdpPort  =  30330;
 String signalkSource   =  "DIY BMS";
 
 // Calibration for the voltage dividers
+bool calibrationTime = true;
 float referenceVoltage = 10.00;
-float value0V[4] = {3, 3, 3, 3};
-float valueRef[4] = {14161, 14161, 14161, 14161};
+float value0V[4] = {2, 1, 1, 1};
+float valueRef[4] = {14503, 14348, 14676, 14365};
 
 // BMS parameters
 float chargeDisconnectVoltage = 3.6;
@@ -68,10 +69,10 @@ String bmsStatus = "OK";
 String chargeStatus = "";
 String dischargeStatus = "";
 
-float cell0Voltage = 0;
-float cell1Voltage = 0;
-float cell2Voltage = 0;
-float cell3Voltage = 0;
+float voltage0 = 0;
+float voltage1 = 0;
+float voltage2 = 0;
+float voltage3 = 0;
 
 float maxCellVoltage = 0;
 float minCellVoltage = 0;
@@ -84,9 +85,6 @@ const String wifiStatus[8] = {"WL_IDLE_STATUS", "WL_NO_SSID_AVAIL", "unknown", "
 
 Adafruit_ADS1115 ads;
 
-ESP8266Timer timer;
-#define TIMER_INTERVAL_MS 10000
-
 IPAddress signalkIp;
 bool x = signalkIp.fromString(signalkIpString);
 
@@ -96,6 +94,9 @@ bool mustSendConfig = false;
 bool mustTestWifi = false;
 bool mustWakeWifi = false;
 bool wifiAsleep = false;
+
+ESP8266Timer timer;
+#define TIMER_INTERVAL_MS 10000  // Call TimerHandler every 10 seconds
 int bmsClock = 0;
 
 
@@ -124,10 +125,10 @@ void setup() {
   ads.setGain(GAIN_TWO);
   ads.begin();
   delay(100);
-  cell0Voltage = readCellVoltage(0);
-  cell1Voltage = readCellVoltage(1);
-  cell2Voltage = readCellVoltage(2);
-  cell3Voltage = readCellVoltage(3);
+  voltage0 = readVoltage(0);
+  voltage1 = readVoltage(1);
+  voltage2 = readVoltage(2);
+  voltage3 = readVoltage(3);
 
   bool x = timer.attachInterruptInterval(TIMER_INTERVAL_MS * 1000, TimerHandler);
 }
@@ -161,12 +162,14 @@ void testWifi() {
   }
 }
 
+
 void wakeWifi() {
   Serial.println ("Wifi waking up.");
   WiFi.forceSleepWake();
   wifiAsleep = false;
   bmsClock = 5;
 }
+
 
 void sendSignalkMessage (String message) {
   if (WiFi.status() != WL_CONNECTED) {
@@ -242,6 +245,26 @@ void signalkSendValue (String path, String value, String units) {
 }
 
 
+void checkCalibration() {
+  actualDischarge = actualDischarge + packDischargeCurrent; // temporary
+  if (maxCellVoltage > calibrationVoltageMax && packDischargeCurrent > 0) { // not charging
+    actualDischarge = 0;
+    Serial.println("Defining pack to be at " + String(calibrationSocMax) + " %.");
+  }
+  if (minCellVoltage < calibrationVoltageMin && packDischargeCurrent > 0) { // not charging
+    packCapacity = actualDischarge / (calibrationSocMax - calibrationSocMin) * 100;
+    Serial.println("Setting packCapacity to " + String (packCapacity, 1) + "Ah.");
+  }
+}
+
+
+float readPackSoc() {
+  float soc;
+  soc = (packCapacity - actualDischarge) / packCapacity * 100;
+  return soc;
+}
+
+
 float interpolate (float cellVoltage, float x, float y, float a, float b) {
   // temporary, see readPckSoc()
   float d=y-x;
@@ -279,14 +302,16 @@ float readPackTemp() {
 
 float readPackDischargeCurrent() {
   // temporary, awaiting power management chip
-  return 3.6; 
+  return +3.6; 
 }
 
-float readCellVoltage(int index) {
+float readVoltage(int index) {
   // Read voltage from a particular cell and apply calibration
   int16_t value = ads.readADC_SingleEnded(index);
   float voltage =  (value - value0V[index])/(valueRef[index] - value0V[index]) * referenceVoltage;
-  //Serial.println("adc[" + String(index) + "]: " + String(value) + ": " + String(voltage, 3) + "V");
+  if (calibrationTime) {
+      Serial.println("adc[" + String(index) + "]: " + String(value) + ": " + String(voltage, 3) + "V");
+  }
   return voltage;
 }
 
@@ -344,39 +369,20 @@ void T(String comment){
 }
 
 
-void checkCalibration() {
-  actualDischarge = actualDischarge + packDischargeCurrent;
-  if (maxCellVoltage > calibrationVoltageMax && packDischargeCurrent > 0) { // not charging
-    actualDischarge = 0;
-    Serial.println("Defining pack to be at " + String(calibrationSocMax) + " %.");
-  }
-  if (minCellVoltage < calibrationVoltageMin && packDischargeCurrent > 0) { // not charging
-    packCapacity = actualDischarge / (calibrationSocMax - calibrationSocMin) * 100;
-    Serial.println("Setting packCapacity to " + String (packCapacity, 1) + "Ah.");
-  }
-}
-
-
-float readPackSoc() {
-  float soc;
-  soc = (packCapacity - actualDischarge) / packCapacity * 100;
-  return soc;
-}
-
-
 void loop() {
   const float dampingFactor = 0.8;
 
   // each measurement takes 32ms:
-  cell0Voltage = dampingFactor * cell0Voltage + (1 - dampingFactor) * readCellVoltage(0);
-  cell1Voltage = dampingFactor * cell1Voltage + (1 - dampingFactor) * readCellVoltage(1);
-  cell2Voltage = dampingFactor * cell2Voltage + (1 - dampingFactor) * readCellVoltage(2);
-  cell3Voltage = dampingFactor * cell3Voltage + (1 - dampingFactor) * readCellVoltage(3);
+  voltage0 = readVoltage(0);
+  voltage1 = readVoltage(1);
+  voltage2 = readVoltage(2);
+  voltage3 = readVoltage(3);
 
   // for now, only 1 cell ;-)
-  //cell3Voltage = cell3Voltage - cell2Voltage;
-  //cell2Voltage = cell2Voltage - cell1Voltage;
-  //cell1Voltage = cell1Voltage - cell0Voltage;
+  float cell0Voltage = voltage0;
+  float cell1Voltage = voltage1 - voltage0;
+  float cell2Voltage = voltage2 - voltage1;
+  float cell3Voltage = voltage3 - voltage2;
 
   maxCellVoltage = maxVoltage(cell0Voltage, cell1Voltage, cell2Voltage, cell3Voltage);
   minCellVoltage = minVoltage(cell0Voltage, cell1Voltage, cell2Voltage, cell3Voltage);
