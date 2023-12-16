@@ -10,6 +10,7 @@
 #include <WiFiUdp.h>
 #include "ESP8266TimerInterrupt.h"             //https://github.com/khoih-prog/ESP8266TimerInterrupt
 #include <Adafruit_ADS1X15.h>
+#include <Adafruit_INA228.h>
 
 // User configuration starts here
 String wifiSsid        =  "openplotter";
@@ -19,14 +20,14 @@ int    signalkUdpPort  =  30330;
 String signalkSource   =  "DIY BMS";
 
 // Calibration for the voltage dividers
-bool calibrationTime = true;
+bool calibrationTime = false;
 float referenceVoltage = 10.00;
 float value0V[4] = {2, 1, 1, 1};
 float valueRef[4] = {14503, 14348, 14676, 14365};
 
 // BMS parameters
 float chargeDisconnectVoltage = 3.6;
-float chargeDisconnectSoc = 101;
+float chargeDisconnectSoc = 90;
 float chargeDisconnectTemp = 3;
 float chargeDisconnectCurrent = 30;
 float chargeReconnectVoltage = 3.5;
@@ -50,13 +51,15 @@ float dischargeDisconnectSoc = 20;
 float dischargeDisconnectTemp = 70;
 float dischargeDisconnectCurrent = 60;
 
+float calibrationVoltageMax = 3.70;
 float calibrationVoltageMin = 3.20;
-float calibrationVoltageMax = 3.40;
-float calibrationSocMin = 17;
 float calibrationSocMax = 100;
+float calibrationSocMin = 17;
 float packCapacity = 280; // Ah
-float actualDischarge = 140; // Ah
+float actualDischarge = 0; // Ah
+float shuntResistance = 0.00605; // Ohm
 // User configuration ends here
+
 
 // For setRelais():
 const int CHARGERELAIS = 13; // D7 = GPIO13
@@ -84,6 +87,7 @@ WiFiUDP udp;
 const String wifiStatus[8] = {"WL_IDLE_STATUS", "WL_NO_SSID_AVAIL", "unknown", "WL_CONNECTED", "WL_CONNECT_FAILED", "", "WL_CONNECT_WRONG_PASSWORD", "WL_DISCONNECTED"};
 
 Adafruit_ADS1115 ads;
+Adafruit_INA228 ina228 = Adafruit_INA228();
 
 IPAddress signalkIp;
 bool x = signalkIp.fromString(signalkIpString);
@@ -116,12 +120,29 @@ void IRAM_ATTR TimerHandler() {
 
 
 void setup() {
+//TEMPORARY: TEST WITH 18650 cell pack
+chargeDisconnectVoltage = 4.2;
+chargeReconnectVoltage = 4.1;
+chargeAlarmVoltage = 4.05;
+dischargeAlarmVoltage = 3.75;
+dischargeReconnectVoltage = 3.7;
+dischargeDisconnectVoltage = 3.6;
+calibrationVoltageMax = 4.17;
+calibrationVoltageMin = 3.70;
+calibrationSocMin = 10;
+packCapacity = 2.6; // Ah
+
+
   Serial.begin(115200);
+  while (!Serial) {
+    delay(10);
+  }
   startWifi();
   udp.begin(33333);
   pinMode(DISCHARGERELAIS, OUTPUT);
   pinMode(CHARGERELAIS, OUTPUT);
   pinMode(LED, OUTPUT);
+  pinMode(13, INPUT_PULLUP); // pulling down D7 resets CHARGE
   ads.setGain(GAIN_TWO);
   ads.begin();
   delay(100);
@@ -130,7 +151,15 @@ void setup() {
   voltage2 = readVoltage(2);
   voltage3 = readVoltage(3);
 
+  if (!ina228.begin()) {
+    Serial.println("Couldn't find INA228 chip");
+    while (1)
+      ;
+  }
+  ina228.setShunt(shuntResistance, 10.0);
+
   bool x = timer.attachInterruptInterval(TIMER_INTERVAL_MS * 1000, TimerHandler);
+  Serial.println("Setup completed");
 }
 
 
@@ -245,10 +274,22 @@ void signalkSendValue (String path, String value, String units) {
 }
 
 
+float readPackSoc() {
+  float soc;
+  actualDischarge = ina228.readCharge();
+  soc = (packCapacity - actualDischarge) / packCapacity * 100;
+  return soc;
+}
+
+
+float readPackDischargeCurrent() {
+  return ina228.readCurrent()/1000; // Convert milli amps to amps
+}
+
+
 void checkCalibration() {
-  actualDischarge = actualDischarge + packDischargeCurrent; // temporary
   if (maxCellVoltage > calibrationVoltageMax && packDischargeCurrent > 0) { // not charging
-    actualDischarge = 0;
+    ina228.resetAcc(); // Reset accumulator registers on the INA228: "reset the coulomb counter"
     Serial.println("Defining pack to be at " + String(calibrationSocMax) + " %.");
   }
   if (minCellVoltage < calibrationVoltageMin && packDischargeCurrent > 0) { // not charging
@@ -258,51 +299,9 @@ void checkCalibration() {
 }
 
 
-float readPackSoc() {
-  float soc;
-  soc = (packCapacity - actualDischarge) / packCapacity * 100;
-  return soc;
-}
-
-
-float interpolate (float cellVoltage, float x, float y, float a, float b) {
-  // temporary, see readPckSoc()
-  float d=y-x;
-  float e=b-a;
-  return ((cellVoltage - x) / d) * e + a;
-}
-
-
-float readPackSoc(float cellVoltage) {
-  // temporary. Since I don't have the power management chip yet, I derive the SOC from the cell0 voltage:
-  float soc = 0;
-
-  if (cellVoltage < 3.65 && cellVoltage > 3.61) {soc=interpolate(cellVoltage, 3.61, 3.65, 99, 100);}
-  if (cellVoltage < 3.61 && cellVoltage > 3.46) {soc=interpolate(cellVoltage, 3.46, 3.61, 95, 99);}
-  if (cellVoltage < 3.46 && cellVoltage > 3.32) {soc=interpolate(cellVoltage, 3.32, 3.46, 90, 95);}
-  if (cellVoltage < 3.32 && cellVoltage > 3.31) {soc=interpolate(cellVoltage, 3.31, 3.32, 80, 90);}
-  if (cellVoltage < 3.31 && cellVoltage > 3.3) {soc=interpolate(cellVoltage, 3.3, 3.31, 70, 80);}
-  if (cellVoltage < 3.3 && cellVoltage > 3.29) {soc=interpolate(cellVoltage, 3.29, 3.3, 60, 70);}
-  if (cellVoltage < 3.29 && cellVoltage > 3.28) {soc=interpolate(cellVoltage, 3.28, 3.29, 50, 60);}
-  if (cellVoltage < 3.28 && cellVoltage > 3.27) {soc=interpolate(cellVoltage, 3.27, 3.28, 40, 50);}
-  if (cellVoltage < 3.27 && cellVoltage > 3.25) {soc=interpolate(cellVoltage, 3.25, 3.27, 30, 40);}
-  if (cellVoltage < 3.25 && cellVoltage > 3.22) {soc=interpolate(cellVoltage, 3.22, 3.25, 20, 30);}
-  if (cellVoltage < 3.22 && cellVoltage > 3.2) {soc=interpolate(cellVoltage, 3.2, 3.22, 17, 20);}
-  if (cellVoltage < 3.2 && cellVoltage > 3.12) {soc=interpolate(cellVoltage, 3.12, 3.2, 14, 17);}
-  if (cellVoltage < 3.12 && cellVoltage > 3) {soc=interpolate(cellVoltage, 3, 3.12, 9, 14);}
-  if (cellVoltage < 3 && cellVoltage > 2.5) {soc=interpolate(cellVoltage, 2.5, 3, 0, 9);}
-
-  return soc;
-}
-
 float readPackTemp() {
   // temporary, awaiting temp sensors
-  return 15;
-}
-
-float readPackDischargeCurrent() {
-  // temporary, awaiting power management chip
-  return +3.6; 
+  return ina228.readDieTemp();
 }
 
 float readVoltage(int index) {
@@ -368,6 +367,19 @@ void T(String comment){
   timestamp = millis();
 }
 
+void testIna228() {
+  Serial.print("Discharge current: ");
+  Serial.print(ina228.readCurrent());
+  Serial.println(" mA");
+
+  Serial.print("Shunt Voltage: ");
+  Serial.print(ina228.readShuntVoltage());
+  Serial.println(" mV");
+
+  Serial.print("Charge: ");
+  Serial.print(String(ina228.readCharge(), 8));
+  Serial.println(" Ah");
+}
 
 void loop() {
   const float dampingFactor = 0.8;
@@ -387,12 +399,11 @@ void loop() {
   maxCellVoltage = maxVoltage(cell0Voltage, cell1Voltage, cell2Voltage, cell3Voltage);
   minCellVoltage = minVoltage(cell0Voltage, cell1Voltage, cell2Voltage, cell3Voltage);
 
-  checkCalibration();
-
-  float packSoc = readPackSoc(cell0Voltage);  // Temporarily provide cell voltage to fake presence of power management chip
-  packSoc = readPackSoc();  // Temporarily provide cell voltage to fake presence of power management chip
+  float packSoc = readPackSoc();
   float packTemp = readPackTemp();
   packDischargeCurrent = readPackDischargeCurrent();
+
+  checkCalibration();
 
   // Charge reconnect
   if (chargeStatus == "chargeDisconnectVoltage" && maxCellVoltage < chargeReconnectVoltage ) {
@@ -544,7 +555,12 @@ void loop() {
     mustWakeWifi = false;
   }
 
+  testIna228();
+
   blink();
+
+  if (! digitalRead(13)) {
+    ina228.resetAcc();
 
   delay(1000);
 }
