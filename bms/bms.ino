@@ -561,6 +561,7 @@ void loop() {
 
   if (! digitalRead(13)) {
     ina228.resetAcc();
+  }
 
   delay(1000);
 }
