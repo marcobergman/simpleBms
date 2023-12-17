@@ -11,7 +11,7 @@ Highlights are:
 * Contrary to drawings, [SSR relays](https://nl.aliexpress.com/item/32262347720.html) only have Normal Open 'contacts'. Idea is that if Wemos fouls up, you can pull it from its socket and then the relays will be 'Closed'.
 * As for current sensing, I'll use an [INA228](https://www.ti.com/document-viewer/INA228/datasheet/GUID-7CC9DEF5-A5FE-412D-B339-B6B8A1E08DE2#TITLE-SBOSA20SBOS54764917). The resolution of the INA226 would suffice as well, but the INA226 does not accumulate power (SOC) so I'd have to keep the Wemos running. With the INA228, I can put the Wemos to sleep if it senses I shut down Signalk, and the alert output of the INA228 can then wake up the Wemos when the current goes over a certain limit.
 * I have looked into industrial BMS chips like the L9961, but they don't seem to have breakout boards or 8266 libraries, so these are sadly beyond the bracket of my stovepipe project. 
-![image](https://github.com/marcobergman/bms/assets/17980560/011bf0b7-8317-45e3-906f-32c0459e2d2d)
+![image](https://github.com/marcobergman/bms/assets/17980560/d2aadae2-9ff6-443c-af1a-f329cc8a710b)
 
 Data sheets
 * [INA228](https://www.ti.com/document-viewer/INA228/datasheet/GUID-7CC9DEF5-A5FE-412D-B339-B6B8A1E08DE2#TITLE-SBOSA20SBOS54764917) ([library](https://github.com/adafruit/Adafruit_INA228))
