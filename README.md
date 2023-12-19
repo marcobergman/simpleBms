@@ -24,6 +24,7 @@ Questions:
 * I think the voltage measuring could be done smarter. All multi-channel AD converters I can find are limited to their input not exceeding the Vdd, which forces me to use voltage dividers, and even with high-precision resistors it would require calibration. Surely there's better solutions for that?
   - Yes it can be done better, see [this thread](https://www.cruisersforum.com/forums/f166/bms-diy-281928.html#post3849254), but for now calibrating the voltage dividers seems to be the way to go.
 * Posted a question at the adafruit forum]: [Charge Result Register not accessible by library](https://forums.adafruit.com/viewtopic.php?t=206644). The INA228 library at https://github.com/adafruit/Adafruit_INA228 does not seem to include a function like readCharge, that would read the chip's Charge Result Register. For building an SOC application, I would need this to count my coulombs. Could this function be added? Thx!
+  - Forked the Arduino library and made the change myself: https://github.com/marcobergman/Adafruit_INA228
 
 The first version of the wemos sketch has been uploaded to this repository. The SignalK plugin that interacts with it sits [here](https://github.com/marcobergman/signalk-browser) and looks like this:
 
