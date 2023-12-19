@@ -60,27 +60,27 @@ float actualDischarge = 0; // Ah
 float shuntResistance = 0.00605; // Ohm
 // User configuration ends here
 
-
 // For setRelais():
 const int CHARGERELAIS = 13; // D7 = GPIO13
 const int DISCHARGERELAIS = 15; // D8 = GPI15 'LOAD'
-const int LED = 2; // GPIO2 = LED
 const int CONNECT = 1;
 const int DISCONNECT = 0;
+
+const int LED = 2; // GPIO2 =  Wemos onboard LED
+const unsigned int MAX_MESSAGE_LENGTH = 12;
 
 String bmsStatus = "OK";
 String chargeStatus = "";
 String dischargeStatus = "";
 
-float voltage0 = 0;
+float voltage0 = 0; // defined here because needs to be set in setup()
 float voltage1 = 0;
 float voltage2 = 0;
 float voltage3 = 0;
+float packDischargeCurrent = 0;
 
 float maxCellVoltage = 0;
 float minCellVoltage = 0;
-
-float packDischargeCurrent = 0;
 
 WiFiClient client;
 WiFiUDP udp;
@@ -128,7 +128,7 @@ dischargeAlarmVoltage = 3.75;
 dischargeReconnectVoltage = 3.7;
 dischargeDisconnectVoltage = 3.6;
 calibrationVoltageMax = 4.17;
-calibrationVoltageMin = 3.70;
+calibrationVoltageMin = 3.50;
 calibrationSocMin = 10;
 packCapacity = 2.6; // Ah
 
@@ -141,7 +141,7 @@ packCapacity = 2.6; // Ah
   udp.begin(33333);
   pinMode(DISCHARGERELAIS, OUTPUT);
   pinMode(CHARGERELAIS, OUTPUT);
-  pinMode(LED, OUTPUT);
+  pinMode(LED, OUTPUT); 
   pinMode(13, INPUT_PULLUP); // pulling down D7 resets CHARGE
   ads.setGain(GAIN_TWO);
   ads.begin();
@@ -289,7 +289,7 @@ float readPackDischargeCurrent() {
 
 void checkCalibration() {
   if (maxCellVoltage > calibrationVoltageMax && packDischargeCurrent > 0) { // not charging
-    ina228.resetAcc(); // Reset accumulator registers on the INA228: "reset the coulomb counter"
+    ina228.resetAcc(); // Reset accumulator registers on the INA228: "reset the on-chip coulomb counter"
     Serial.println("Defining pack to be at " + String(calibrationSocMax) + " %.");
   }
   if (minCellVoltage < calibrationVoltageMin && packDischargeCurrent > 0) { // not charging
@@ -307,7 +307,7 @@ float readPackTemp() {
 float readVoltage(int index) {
   // Read voltage from a particular cell and apply calibration
   int16_t value = ads.readADC_SingleEnded(index);
-  float voltage =  (value - value0V[index])/(valueRef[index] - value0V[index]) * referenceVoltage;
+  float voltage = (value - value0V[index])/(valueRef[index] - value0V[index]) * referenceVoltage;
   if (calibrationTime) {
       Serial.println("adc[" + String(index) + "]: " + String(value) + ": " + String(voltage, 3) + "V");
   }
@@ -347,6 +347,7 @@ void setRelais (int gpio, int value) {
 }
 
 void blink() {
+  // 2 blinks = connected to Wifi, 1 blink = power saving mode
   const int blinkMs = 2;
   digitalWrite(LED, LOW);
   delay (blinkMs);
@@ -358,6 +359,154 @@ void blink() {
     digitalWrite(LED, HIGH);
   }
 }
+
+
+void printCurrentValues() {
+  // For CLI purposes:
+  //
+  Serial.println("cdv: chargeDisconnectVoltage: " + String(chargeDisconnectVoltage, 3));
+  Serial.println("cds: chargeDisconnectSoc: " + String(chargeDisconnectSoc));
+  Serial.println("cdt: chargeDisconnectTemp: " + String(chargeDisconnectTemp));
+  Serial.println("cdc: chargeDisconnectCurrent: " + String(chargeDisconnectCurrent));
+  Serial.println("crv: chargeReconnectVoltage: " + String(chargeReconnectVoltage, 3));
+  Serial.println("crs: chargeReconnectSoc: " + String(chargeReconnectSoc));
+  Serial.println("crt: chargeReconnectTemp: " + String(chargeReconnectTemp));
+  Serial.println("cav: chargeAlarmVoltage: " + String(chargeAlarmVoltage, 3));
+  Serial.println("cas: chargeAlarmSoc: " + String(chargeAlarmSoc));
+  Serial.println("cat: chargeAlarmTemp: " + String(chargeAlarmTemp));
+  Serial.println("cac: chargeAlarmCurrent: " + String(chargeAlarmCurrent));
+  Serial.println("dav: dischargeAlarmVoltage: " + String(dischargeAlarmVoltage, 3));
+  Serial.println("das: dischargeAlarmSoc: " + String(dischargeAlarmSoc));
+  Serial.println("dat: dischargeAlarmTemp: " + String(dischargeAlarmTemp));
+  Serial.println("dac: dischargeAlarmCurrent: " + String(dischargeAlarmCurrent));
+  Serial.println("drv: dischargeReconnectVoltage: " + String(dischargeReconnectVoltage, 3));
+  Serial.println("drs: dischargeReconnectSoc: " + String(dischargeReconnectSoc));
+  Serial.println("drt: dischargeReconnectTemp: " + String(dischargeReconnectTemp));
+  Serial.println("ddv: dischargeDisconnectVoltage: " + String(dischargeDisconnectVoltage, 3));
+  Serial.println("dds: dischargeDisconnectSoc: " + String(dischargeDisconnectSoc));
+  Serial.println("ddt: dischargeDisconnectTemp: " + String(dischargeDisconnectTemp));
+  Serial.println("ddc: dischargeDisconnectCurrent: " + String(dischargeDisconnectCurrent));
+  Serial.println("cvm: calibrationVoltageMax: " + String(calibrationVoltageMax, 3));
+  Serial.println("cvn: calibrationVoltageMin: " + String(calibrationVoltageMin, 3));	
+  Serial.println("csm: calibrationSocMax: " + String(calibrationSocMax));
+  Serial.println("csn: calibrationSocMin: " + String(calibrationSocMin));	
+  Serial.println("pc: packCapacity: " + String(packCapacity));
+  Serial.println("ad: actualDischarge: " + String(actualDischarge));	
+  Serial.println("sr: shuntResistance: " + String(shuntResistance, 8));
+}
+
+
+bool processMessage(String message) {
+  // process message from the cli provider
+  if (message == "") {
+    return false;
+  }
+
+  if (message == "q") {
+    // quit cli
+    return true;
+  }
+
+  if (message == "v") {
+    printCurrentValues();
+    return false;
+  }
+
+  int delimiterPos = message.indexOf ("=");
+  if (delimiterPos == -1) {
+    Serial.println("Format: parameter=value");
+    return false;
+  }
+
+  // split message into parameter and value
+  String parameter = message.substring(0, delimiterPos);
+  parameter.toLowerCase();
+  float value = message.substring(delimiterPos+1).toFloat();
+  bool parameterUnknown = false;
+	
+  if      (parameter == "cdv") chargeDisconnectVoltage = value;
+  else if (parameter == "cds") chargeDisconnectSoc = value;
+  else if (parameter == "cdt") chargeDisconnectTemp = value;
+  else if (parameter == "crv") chargeReconnectVoltage = value;
+  else if (parameter == "crs") chargeReconnectSoc = value;
+  else if (parameter == "crt") chargeReconnectTemp = value;
+  else if (parameter == "crc") chargeReconnectCurrent = value;
+  else if (parameter == "cav") chargeAlarmVoltage = value;
+  else if (parameter == "cas") chargeAlarmSoc = value;
+  else if (parameter == "cat") chargeAlarmTemp = value;
+  else if (parameter == "cac") chargeAlarmCurrent = value;
+  else if (parameter == "dav") dischargeAlarmVoltage = value;
+  else if (parameter == "das") dischargeAlarmSoc = value;
+  else if (parameter == "dat") dischargeAlarmTemp = value;
+  else if (parameter == "dac") dischargeAlarmCurrent = value;
+  else if (parameter == "drv") dischargeReconnectVoltage = value;
+  else if (parameter == "drs") dischargeReconnectSoc = value;
+  else if (parameter == "drt") dischargeReconnectTemp = value;
+  else if (parameter == "ddv") dischargeDisconnectVoltage = value;
+  else if (parameter == "dds") dischargeDisconnectSoc = value;
+  else if (parameter == "ddt") dischargeDisconnectTemp = value;
+  else if (parameter == "ddc") dischargeDisconnectCurrent = value;
+  else if (parameter == "cvm") calibrationVoltageMax = value;
+  else if (parameter == "cvn") calibrationVoltageMin = value;
+  else if (parameter == "csm") calibrationSocMax = value;
+  else if (parameter == "csn") calibrationSocMin = value;
+  else if (parameter == "pc") packCapacity = value;
+  else if (parameter == "ad") actualDischarge = value;
+  else if (parameter == "sr") shuntResistance = value;
+  else parameterUnknown = true;
+
+  if (parameterUnknown) {
+    Serial.println("Unknown parameter " + parameter + "; type ? for parameters.");
+    return false;
+  }
+
+  Serial.println ("parameter " + parameter + " set to " + String(value, 6));
+  mustSendConfig = true;
+  return true;
+}
+
+
+void provideCli() {
+  // Stop processing for a while (60 sec timeout) and provide a command line interface to change parameters
+  // Activate: any character
+  // Arduino IDE Serial Monitor "Carriage Return"
+  // Putty Serial: "Local echo: Force on", "Serial Flow Control: None"
+
+  static char message[MAX_MESSAGE_LENGTH];
+  static unsigned int message_pos = 0;
+  bool finished = false;
+  int cliTimer = 0;
+
+  Serial.print("SimpleBMS Serial CLI. {parameter=value | [q]uit | [v]alues} timeout 60s");
+  while (!finished) {
+    while (Serial.available() > 0) { 
+      cliTimer = 0;
+      char inByte = Serial.read();
+
+      if ( inByte != '\r' && (message_pos < MAX_MESSAGE_LENGTH - 1) ) {
+        message[message_pos] = inByte;
+        message_pos++;
+      }
+      else {
+        message[message_pos] = '\0';
+        Serial.println("");
+        message_pos = 0;
+        finished = processMessage(message);
+        if (!finished) {
+          Serial.print ("> ");
+        }
+      }
+    }
+    while (Serial.available() == 0 && ! finished) { 
+      cliTimer += 1;
+      delay(100);
+      if (cliTimer > 600) {
+        return;
+      }
+    }
+  }
+}
+
 
 int timestamp = millis();
 
@@ -381,6 +530,7 @@ void testIna228() {
   Serial.println(" Ah");
 }
 
+
 void loop() {
   const float dampingFactor = 0.8;
 
@@ -390,7 +540,6 @@ void loop() {
   voltage2 = readVoltage(2);
   voltage3 = readVoltage(3);
 
-  // for now, only 1 cell ;-)
   float cell0Voltage = voltage0;
   float cell1Voltage = voltage1 - voltage0;
   float cell2Voltage = voltage2 - voltage1;
@@ -415,9 +564,6 @@ void loop() {
   if (chargeStatus == "chargeDisconnectTemp" && packTemp > chargeReconnectTemp) {
     chargeStatus = "";
   }
-  //if (chargeStatus == "chargeDisconnectCurrent" && packDischargeCurrent < chargeReconnectCurrent) {
-  //   chargeStatus = "";
-  //}
 
   // Disable charge alarms
   if (chargeStatus == "chargeAlarmVoltage" && maxCellVoltage < chargeAlarmVoltage) {
@@ -476,9 +622,6 @@ void loop() {
   if (dischargeStatus == "dischargeDisconnectTemp" && packTemp < dischargeReconnectTemp) {
     dischargeStatus = "";
   }
-  //if (dischargeStatus == "dischargeDisconnectCurrent" && packDischargeCurrent > - dischargeReconnectCurrent) {
-  //  dischargeStatus = "";
-  //}
 
   // Disable discharge  alarms
   if (dischargeStatus == "dischargeAlarmVoltage" && maxCellVoltage > dischargeAlarmVoltage) {
@@ -509,7 +652,7 @@ void loop() {
   }
 
   // discharge disconnect
-  if (maxCellVoltage < dischargeDisconnectVoltage) {
+  if (minCellVoltage < dischargeDisconnectVoltage) {
     dischargeStatus = "dischargeDisconnectVoltage";
     setRelais (DISCHARGERELAIS, DISCONNECT);
   }
@@ -536,7 +679,7 @@ void loop() {
 
   bmsStatus = chargeStatus + dischargeStatus;
 
-  Serial.println ("adc[0] = " + String(cell0Voltage, 6) + "; bmsStatus = " + bmsStatus);
+  Serial.println ("adc[0] = " + String(cell0Voltage, 6) + "; bmsStatus = " + bmsStatus); // + "\r"
 
   sendCellVoltages(cell0Voltage, cell1Voltage, cell2Voltage, cell3Voltage);
 
@@ -555,13 +698,18 @@ void loop() {
     mustWakeWifi = false;
   }
 
-  testIna228();
+  // testIna228();
 
   blink();
 
   if (! digitalRead(13)) {
     ina228.resetAcc();
+    Serial.println("Resetting accumulators");
   }
 
+  if (Serial.available() > 0) {
+    provideCli();
+  }
+  
   delay(1000);
 }
