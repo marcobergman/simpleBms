@@ -20,13 +20,15 @@ Data sheets
 
 Questions:
 * BMS parameters can be set in the Wemos EEPROM. Current idea is to set those values in SignalK paths and let the Wemos compare it to its stored values, and replace those stored values if they are changed. Is there a better way of doing this?
-  - For the time being, I set the parameters in the wemos sketch, and periodically upload them to signalk. In due time I might use the store-and-pull mechsnism described above. 
+  - For the time being, I set the parameters in the wemos sketch, and periodically upload them to signalk. In due time I might use the store-and-pull mechanism described above. In fact, created a little command line interface over the serial connection to set parameters.
 * I think the voltage measuring could be done smarter. All multi-channel AD converters I can find are limited to their input not exceeding the Vdd, which forces me to use voltage dividers, and even with high-precision resistors it would require calibration. Surely there's better solutions for that?
   - Yes it can be done better, see [this thread](https://www.cruisersforum.com/forums/f166/bms-diy-281928.html#post3849254), but for now calibrating the voltage dividers seems to be the way to go.
 * Posted a question at the adafruit forum]: [Charge Result Register not accessible by library](https://forums.adafruit.com/viewtopic.php?t=206644). The INA228 library at https://github.com/adafruit/Adafruit_INA228 does not seem to include a function like readCharge, that would read the chip's Charge Result Register. For building an SOC application, I would need this to count my coulombs. Could this function be added? Thx!
+  - Forked the Arduino library and made the change myself: https://github.com/marcobergman/Adafruit_INA228
 
 The first version of the wemos sketch has been uploaded to this repository. The SignalK plugin that interacts with it sits [here](https://github.com/marcobergman/signalk-browser) and looks like this:
 
 ![image](https://github.com/marcobergman/bms/assets/17980560/32f82ff5-a1c7-414b-8f6b-b16ee85cb89b)
 
 
+![image](https://github.com/marcobergman/simpleBms/assets/17980560/215802b8-0af5-44dc-aab4-a0f2c393f870)
