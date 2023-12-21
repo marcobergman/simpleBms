@@ -53,6 +53,7 @@ float dischargeDisconnectCurrent = 60;
 
 float calibrationVoltageMax = 3.70;
 float calibrationVoltageMin = 3.20;
+float calibrationHysteresisVoltage = 0.1;
 float calibrationSocMax = 100;
 float calibrationSocMin = 17;
 float packCapacity = 280; // Ah
@@ -98,6 +99,8 @@ bool mustSendConfig = false;
 bool mustTestWifi = false;
 bool mustWakeWifi = false;
 bool wifiAsleep = false;
+
+bool capacitySet = false;
 
 ESP8266Timer timer;
 #define TIMER_INTERVAL_MS 10000  // Call TimerHandler every 10 seconds
@@ -292,9 +295,13 @@ void checkCalibration() {
     ina228.resetAcc(); // Reset accumulator registers on the INA228: "reset the on-chip coulomb counter"
     Serial.println("Defining pack to be at " + String(calibrationSocMax) + " %.");
   }
-  if (minCellVoltage < calibrationVoltageMin && packDischargeCurrent > 0) { // not charging
+  if (minCellVoltage < calibrationVoltageMin && packDischargeCurrent > 0 && !capacitySet) { // not charging
     packCapacity = actualDischarge / (calibrationSocMax - calibrationSocMin) * 100;
+    capacitySet = true; 
     Serial.println("Setting packCapacity to " + String (packCapacity, 1) + "Ah.");
+  }
+  if (minCellVoltage > calibrationVoltageMin + calibrationHysteresisVoltage && packDischargeCurrent > 0 && capacitySet) {
+    capacitySet = false;
   }
 }
 
@@ -346,6 +353,7 @@ void setRelais (int gpio, int value) {
     }
 }
 
+
 void blink() {
   // 2 blinks = connected to Wifi, 1 blink = power saving mode
   const int blinkMs = 2;
@@ -387,7 +395,8 @@ void printCurrentValues() {
   Serial.println("ddt: dischargeDisconnectTemp: " + String(dischargeDisconnectTemp));
   Serial.println("ddc: dischargeDisconnectCurrent: " + String(dischargeDisconnectCurrent));
   Serial.println("cvm: calibrationVoltageMax: " + String(calibrationVoltageMax, 3));
-  Serial.println("cvn: calibrationVoltageMin: " + String(calibrationVoltageMin, 3));	
+  Serial.println("cvn: calibrationVoltageMin: " + String(calibrationHysteresisVoltage, 3));	
+  Serial.println("csm: calibrationHysteresisVoltage: " + String(calibrationSocMax));
   Serial.println("csm: calibrationSocMax: " + String(calibrationSocMax));
   Serial.println("csn: calibrationSocMin: " + String(calibrationSocMin));	
   Serial.println("pc: packCapacity: " + String(packCapacity));
@@ -448,6 +457,7 @@ bool processMessage(String message) {
   else if (parameter == "ddc") dischargeDisconnectCurrent = value;
   else if (parameter == "cvm") calibrationVoltageMax = value;
   else if (parameter == "cvn") calibrationVoltageMin = value;
+  else if (parameter == "chv") calibrationHysteresisVoltage = value;
   else if (parameter == "csm") calibrationSocMax = value;
   else if (parameter == "csn") calibrationSocMin = value;
   else if (parameter == "pc") packCapacity = value;
