@@ -395,8 +395,8 @@ void printCurrentValues() {
   Serial.println("ddt: dischargeDisconnectTemp: " + String(dischargeDisconnectTemp));
   Serial.println("ddc: dischargeDisconnectCurrent: " + String(dischargeDisconnectCurrent));
   Serial.println("cvm: calibrationVoltageMax: " + String(calibrationVoltageMax, 3));
-  Serial.println("cvn: calibrationVoltageMin: " + String(calibrationHysteresisVoltage, 3));	
-  Serial.println("csm: calibrationHysteresisVoltage: " + String(calibrationSocMax));
+  Serial.println("cvn: calibrationVoltageMin: " + String(calibrationVoltageMin, 3));	
+  Serial.println("csm: calibrationHysteresisVoltage: " + String(calibrationHysteresisVoltage));
   Serial.println("csm: calibrationSocMax: " + String(calibrationSocMax));
   Serial.println("csn: calibrationSocMin: " + String(calibrationSocMin));	
   Serial.println("pc: packCapacity: " + String(packCapacity));
