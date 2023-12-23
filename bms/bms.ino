@@ -23,7 +23,7 @@ String signalkSource   =  "DIY BMS";
 bool calibrationTime = false;
 float referenceVoltage = 10.00;
 float value0V[4] = {2, 1, 1, 1};
-float valueRef[4] = {14503, 14348, 14676, 14365};
+float valueRef[4] = {14408, 14513, 14550, 14524};
 
 // BMS parameters
 float chargeDisconnectVoltage = 3.6;
@@ -58,7 +58,7 @@ float calibrationSocMax = 100;
 float calibrationSocMin = 17;
 float packCapacity = 280; // Ah
 float actualDischarge = 0; // Ah
-float shuntResistance = 0.00605; // Ohm
+float shuntResistance = 0.000947; // Ohm
 // User configuration ends here
 
 // For setRelais():
@@ -68,6 +68,7 @@ const int CONNECT = 1;
 const int DISCONNECT = 0;
 
 const int LED = 2; // GPIO2 =  Wemos onboard LED
+const int BUTTON = 12; // GPIO12 = D6 button to ground to reset accumulator
 const unsigned int MAX_MESSAGE_LENGTH = 12;
 
 String bmsStatus = "OK";
@@ -145,7 +146,7 @@ packCapacity = 2.6; // Ah
   pinMode(DISCHARGERELAIS, OUTPUT);
   pinMode(CHARGERELAIS, OUTPUT);
   pinMode(LED, OUTPUT); 
-  pinMode(13, INPUT_PULLUP); // pulling down D7 resets CHARGE
+  pinMode(BUTTON, INPUT_PULLUP); // pulling down D6 resets CHARGE
   ads.setGain(GAIN_TWO);
   ads.begin();
   delay(100);
@@ -346,10 +347,10 @@ void sendCellVoltages(float cell0Voltage, float cell1Voltage, float cell2Voltage
 void setRelais (int gpio, int value) {
   // Connect or disconnect charge or load relais
     if (value == CONNECT) {
-      digitalWrite(gpio, HIGH);
+      digitalWrite(gpio, LOW);
     }
     else {
-      digitalWrite(gpio, LOW);
+      digitalWrite(gpio, HIGH);
     }
 }
 
@@ -400,13 +401,19 @@ void printCurrentValues() {
   Serial.println("csm: calibrationSocMax: " + String(calibrationSocMax));
   Serial.println("csn: calibrationSocMin: " + String(calibrationSocMin));	
   Serial.println("pc: packCapacity: " + String(packCapacity));
-  Serial.println("ad: actualDischarge: " + String(actualDischarge));	
-  Serial.println("sr: shuntResistance: " + String(shuntResistance, 8));
+  Serial.println("ad: actualDischarge: " + String(actualDischarge));
+  Serial.println("sr: shuntResistance: " + String(shuntResistance, 8));	
+  Serial.println("ct: calibrationTime: " + String(calibrationTime));
 }
 
 
-bool processMessage(String message) {
+bool processMessage(String iMessage) {
   // process message from the cli provider
+
+  String message = iMessage;
+  if (message.endsWith("\n")) {
+    message.remove(message.length()-1, 1); 
+  }
   if (message == "") {
     return false;
   }
@@ -462,7 +469,8 @@ bool processMessage(String message) {
   else if (parameter == "csn") calibrationSocMin = value;
   else if (parameter == "pc") packCapacity = value;
   else if (parameter == "ad") actualDischarge = value;
-  else if (parameter == "sr") shuntResistance = value;
+  else if (parameter == "sr") { shuntResistance = value; ina228.setShunt(shuntResistance, 10.0);}
+  else if (parameter == "ct") calibrationTime = value;
   else parameterUnknown = true;
 
   if (parameterUnknown) {
@@ -532,7 +540,7 @@ void testIna228() {
   Serial.println(" mA");
 
   Serial.print("Shunt Voltage: ");
-  Serial.print(ina228.readShuntVoltage());
+  Serial.print(String(ina228.readShuntVoltage(), 6));
   Serial.println(" mV");
 
   Serial.print("Charge: ");
@@ -708,14 +716,30 @@ void loop() {
     mustWakeWifi = false;
   }
 
-  // testIna228();
+  if (calibrationTime) {
+    testIna228();
+  }
 
   blink();
 
-  if (! digitalRead(13)) {
+  if (! digitalRead(BUTTON)) { // D6 low = 
     ina228.resetAcc();
     Serial.println("Resetting accumulators");
   }
+
+  int packetSize = udp.parsePacket();
+  if (packetSize) {
+    Serial.print("Received packet! Size: ");
+    Serial.println(packetSize); 
+    char packet[255];
+    int len = udp.read(packet, 255);
+    if (len > 0)
+    {
+      packet[len] = '\0';
+      processMessage(String(packet));
+    }
+    Serial.print(packet); 
+ }
 
   if (Serial.available() > 0) {
     provideCli();
