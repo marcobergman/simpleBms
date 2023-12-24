@@ -8,7 +8,7 @@
 #include <Arduino.h>
 #include <ESP8266WiFi.h>
 #include <WiFiUdp.h>
-#include "ESP8266TimerInterrupt.h"             //https://github.com/khoih-prog/ESP8266TimerInterrupt
+#include "ESP8266TimerInterrupt.h"
 #include <Adafruit_ADS1X15.h>
 #include <Adafruit_INA228.h>
 
@@ -18,6 +18,7 @@ String wifiPassword    =  "12345678";
 String signalkIpString =  "10.10.10.1";
 int    signalkUdpPort  =  30330;
 String signalkSource   =  "DIY BMS";
+int    udpSocket       =  33333;
 
 // Calibration for the voltage dividers
 bool calibrationTime = false;
@@ -142,7 +143,7 @@ packCapacity = 2.6; // Ah
     delay(10);
   }
   startWifi();
-  udp.begin(33333);
+  udp.begin(udpSocket);
   pinMode(DISCHARGERELAIS, OUTPUT);
   pinMode(CHARGERELAIS, OUTPUT);
   pinMode(LED, OUTPUT); 
@@ -252,12 +253,14 @@ void sendBmsConfig () {
 
 
 void sendBmsState(float packSoc, float packDischargeCurrent, String bmsStatus, float packTemp) {
-  // send bsm status to SignalK
+  // send bms status to SignalK
   String value = "{";
   value = value  + "\"packSoc\": " + String(packSoc) +", ";
   value = value  + "\"packDischargeCurrent\": " + String(packDischargeCurrent) +", ";
   value = value  + "\"packTemp\": " + String(packTemp) +", ";
-  value = value  + "\"bmsStatus\": \"" + String(bmsStatus) + "\"";
+  value = value  + "\"bmsStatus\": \"" + String(bmsStatus) + "\", ";
+  value = value  + "\"ipAddress\": \"" + WiFi.localIP().toString() + "\", ";
+  value = value  + "\"udpSocket\": \"" + String(udpSocket) + "\"";
   value = value + "}";
 
   String message = "{\"updates\":[{\"$source\": \""+ signalkSource + "\", \"values\":[{\"path\":\"bms.state\",\"value\":" + value + "}]}]}";
@@ -729,8 +732,7 @@ void loop() {
 
   int packetSize = udp.parsePacket();
   if (packetSize) {
-    Serial.print("Received packet! Size: ");
-    Serial.println(packetSize); 
+    // process udp packet received (e.g. echo "cds=101" | nc -u -w 1 10.10.10.129 33333)
     char packet[255];
     int len = udp.read(packet, 255);
     if (len > 0)
@@ -738,7 +740,6 @@ void loop() {
       packet[len] = '\0';
       processMessage(String(packet));
     }
-    Serial.print(packet); 
  }
 
   if (Serial.available() > 0) {
