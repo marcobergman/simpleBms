@@ -11,6 +11,7 @@
 #include "ESP8266TimerInterrupt.h"
 #include <Adafruit_ADS1X15.h>
 #include <Adafruit_INA228.h>
+#include "ESPTelnet.h"
 
 // User configuration starts here
 String wifiSsid        =  "openplotter";
@@ -18,7 +19,8 @@ String wifiPassword    =  "12345678";
 String signalkIpString =  "10.10.10.1";
 int    signalkUdpPort  =  30330;
 String signalkSource   =  "DIY BMS";
-int    udpSocket       =  33333;
+int    udpClientSocket =  30330;
+int    telnetServerSocket = 23;
 
 // Calibration for the voltage dividers
 bool calibrationTime = false;
@@ -87,6 +89,8 @@ float minCellVoltage = 0;
 
 WiFiClient client;
 WiFiUDP udp;
+ESPTelnet telnet;
+
 const String wifiStatus[8] = {"WL_IDLE_STATUS", "WL_NO_SSID_AVAIL", "unknown", "WL_CONNECTED", "WL_CONNECT_FAILED", "", "WL_CONNECT_WRONG_PASSWORD", "WL_DISCONNECTED"};
 
 Adafruit_ADS1115 ads;
@@ -101,6 +105,7 @@ bool mustSendConfig = false;
 bool mustTestWifi = false;
 bool mustWakeWifi = false;
 bool wifiAsleep = false;
+bool telnetStarted = false;
 
 bool capacitySet = false;
 
@@ -124,6 +129,27 @@ void IRAM_ATTR TimerHandler() {
 }
 
 
+void bmsPrint (String str) {
+  Serial.print(str);
+  telnet.print(str);
+}
+
+void bmsPrintln (String str) {
+  Serial.println(str);
+  telnet.println(str);
+}
+
+void onTelnetInput(String str) {
+  if (processMessage (str)) {
+    telnet.disconnectClient();
+  };
+}
+
+void onTelnetConnect(String ip) {
+  telnet.println("\nSimpleBMS Serial CLI. {parameter=value | [q]uit | [v]alues} timeout 60s");
+}
+
+
 void setup() {
 //TEMPORARY: TEST WITH 18650 cell pack
 chargeDisconnectVoltage = 4.2;
@@ -143,7 +169,7 @@ packCapacity = 2.6; // Ah
     delay(10);
   }
   startWifi();
-  udp.begin(udpSocket);
+  udp.begin(udpClientSocket);
   pinMode(DISCHARGERELAIS, OUTPUT);
   pinMode(CHARGERELAIS, OUTPUT);
   pinMode(LED, OUTPUT); 
@@ -164,7 +190,24 @@ packCapacity = 2.6; // Ah
   ina228.setShunt(shuntResistance, 10.0);
 
   bool x = timer.attachInterruptInterval(TIMER_INTERVAL_MS * 1000, TimerHandler);
+
+  telnet.onInputReceived(onTelnetInput);
+  telnet.onConnect(onTelnetConnect);
+
   Serial.println("Setup completed");
+}
+
+
+void telnetLoop() {
+  if (WiFi.status() == WL_CONNECTED && !telnetStarted) {
+    if (telnet.begin(telnetServerSocket)) {
+      Serial.println("Telnet listener running.");
+      telnetStarted = true;
+    } else {
+      Serial.println("Telnet listener error.");
+    }
+  }
+  telnet.loop();
 }
 
 
@@ -188,11 +231,13 @@ void testWifi() {
     WiFi.setSleepMode (WIFI_MODEM_SLEEP);
     WiFi.forceSleepBegin ();
     wifiAsleep = true;
+    telnetStarted = false;
   }
   else {
     Serial.printf ("WIFI Connection status: %d: ", WiFi.status());
     Serial.println (wifiStatus[WiFi.status()]);
     WiFi.printDiag(Serial);
+    telnetStarted = false;
   }
 }
 
@@ -260,7 +305,7 @@ void sendBmsState(float packSoc, float packDischargeCurrent, String bmsStatus, f
   value = value  + "\"packTemp\": " + String(packTemp) +", ";
   value = value  + "\"bmsStatus\": \"" + String(bmsStatus) + "\", ";
   value = value  + "\"ipAddress\": \"" + WiFi.localIP().toString() + "\", ";
-  value = value  + "\"udpSocket\": \"" + String(udpSocket) + "\"";
+  value = value  + "\"telnetServerSocket\": " + String(telnetServerSocket) + "";
   value = value + "}";
 
   String message = "{\"updates\":[{\"$source\": \""+ signalkSource + "\", \"values\":[{\"path\":\"bms.state\",\"value\":" + value + "}]}]}";
@@ -297,12 +342,12 @@ float readPackDischargeCurrent() {
 void checkCalibration() {
   if (maxCellVoltage > calibrationVoltageMax && packDischargeCurrent > 0) { // not charging
     ina228.resetAcc(); // Reset accumulator registers on the INA228: "reset the on-chip coulomb counter"
-    Serial.println("Defining pack to be at " + String(calibrationSocMax) + " %.");
+    bmsPrintln("Defining pack to be at " + String(calibrationSocMax) + " %.");
   }
   if (minCellVoltage < calibrationVoltageMin && packDischargeCurrent > 0 && !capacitySet) { // not charging
     packCapacity = actualDischarge / (calibrationSocMax - calibrationSocMin) * 100;
     capacitySet = true; 
-    Serial.println("Setting packCapacity to " + String (packCapacity, 1) + "Ah.");
+    bmsPrintln("Setting packCapacity to " + String (packCapacity, 1) + "Ah.");
   }
   if (minCellVoltage > calibrationVoltageMin + calibrationHysteresisVoltage && packDischargeCurrent > 0 && capacitySet) {
     capacitySet = false;
@@ -320,7 +365,7 @@ float readVoltage(int index) {
   int16_t value = ads.readADC_SingleEnded(index);
   float voltage = (value - value0V[index])/(valueRef[index] - value0V[index]) * referenceVoltage;
   if (calibrationTime) {
-      Serial.println("adc[" + String(index) + "]: " + String(value) + ": " + String(voltage, 3) + "V");
+      bmsPrintln("adc[" + String(index) + "]: " + String(value) + ": " + String(voltage, 3) + "V");
   }
   return voltage;
 }
@@ -376,37 +421,37 @@ void blink() {
 void printCurrentValues() {
   // For CLI purposes:
   //
-  Serial.println("cdv: chargeDisconnectVoltage: " + String(chargeDisconnectVoltage, 3));
-  Serial.println("cds: chargeDisconnectSoc: " + String(chargeDisconnectSoc));
-  Serial.println("cdt: chargeDisconnectTemp: " + String(chargeDisconnectTemp));
-  Serial.println("cdc: chargeDisconnectCurrent: " + String(chargeDisconnectCurrent));
-  Serial.println("crv: chargeReconnectVoltage: " + String(chargeReconnectVoltage, 3));
-  Serial.println("crs: chargeReconnectSoc: " + String(chargeReconnectSoc));
-  Serial.println("crt: chargeReconnectTemp: " + String(chargeReconnectTemp));
-  Serial.println("cav: chargeAlarmVoltage: " + String(chargeAlarmVoltage, 3));
-  Serial.println("cas: chargeAlarmSoc: " + String(chargeAlarmSoc));
-  Serial.println("cat: chargeAlarmTemp: " + String(chargeAlarmTemp));
-  Serial.println("cac: chargeAlarmCurrent: " + String(chargeAlarmCurrent));
-  Serial.println("dav: dischargeAlarmVoltage: " + String(dischargeAlarmVoltage, 3));
-  Serial.println("das: dischargeAlarmSoc: " + String(dischargeAlarmSoc));
-  Serial.println("dat: dischargeAlarmTemp: " + String(dischargeAlarmTemp));
-  Serial.println("dac: dischargeAlarmCurrent: " + String(dischargeAlarmCurrent));
-  Serial.println("drv: dischargeReconnectVoltage: " + String(dischargeReconnectVoltage, 3));
-  Serial.println("drs: dischargeReconnectSoc: " + String(dischargeReconnectSoc));
-  Serial.println("drt: dischargeReconnectTemp: " + String(dischargeReconnectTemp));
-  Serial.println("ddv: dischargeDisconnectVoltage: " + String(dischargeDisconnectVoltage, 3));
-  Serial.println("dds: dischargeDisconnectSoc: " + String(dischargeDisconnectSoc));
-  Serial.println("ddt: dischargeDisconnectTemp: " + String(dischargeDisconnectTemp));
-  Serial.println("ddc: dischargeDisconnectCurrent: " + String(dischargeDisconnectCurrent));
-  Serial.println("cvm: calibrationVoltageMax: " + String(calibrationVoltageMax, 3));
-  Serial.println("cvn: calibrationVoltageMin: " + String(calibrationVoltageMin, 3));	
-  Serial.println("csm: calibrationHysteresisVoltage: " + String(calibrationHysteresisVoltage));
-  Serial.println("csm: calibrationSocMax: " + String(calibrationSocMax));
-  Serial.println("csn: calibrationSocMin: " + String(calibrationSocMin));	
-  Serial.println("pc: packCapacity: " + String(packCapacity));
-  Serial.println("ad: actualDischarge: " + String(actualDischarge));
-  Serial.println("sr: shuntResistance: " + String(shuntResistance, 8));	
-  Serial.println("ct: calibrationTime: " + String(calibrationTime));
+  bmsPrintln("cdv: chargeDisconnectVoltage: " + String(chargeDisconnectVoltage, 3));
+  bmsPrintln("cds: chargeDisconnectSoc: " + String(chargeDisconnectSoc));
+  bmsPrintln("cdt: chargeDisconnectTemp: " + String(chargeDisconnectTemp));
+  bmsPrintln("cdc: chargeDisconnectCurrent: " + String(chargeDisconnectCurrent));
+  bmsPrintln("crv: chargeReconnectVoltage: " + String(chargeReconnectVoltage, 3));
+  bmsPrintln("crs: chargeReconnectSoc: " + String(chargeReconnectSoc));
+  bmsPrintln("crt: chargeReconnectTemp: " + String(chargeReconnectTemp));
+  bmsPrintln("cav: chargeAlarmVoltage: " + String(chargeAlarmVoltage, 3));
+  bmsPrintln("cas: chargeAlarmSoc: " + String(chargeAlarmSoc));
+  bmsPrintln("cat: chargeAlarmTemp: " + String(chargeAlarmTemp));
+  bmsPrintln("cac: chargeAlarmCurrent: " + String(chargeAlarmCurrent));
+  bmsPrintln("dav: dischargeAlarmVoltage: " + String(dischargeAlarmVoltage, 3));
+  bmsPrintln("das: dischargeAlarmSoc: " + String(dischargeAlarmSoc));
+  bmsPrintln("dat: dischargeAlarmTemp: " + String(dischargeAlarmTemp));
+  bmsPrintln("dac: dischargeAlarmCurrent: " + String(dischargeAlarmCurrent));
+  bmsPrintln("drv: dischargeReconnectVoltage: " + String(dischargeReconnectVoltage, 3));
+  bmsPrintln("drs: dischargeReconnectSoc: " + String(dischargeReconnectSoc));
+  bmsPrintln("drt: dischargeReconnectTemp: " + String(dischargeReconnectTemp));
+  bmsPrintln("ddv: dischargeDisconnectVoltage: " + String(dischargeDisconnectVoltage, 3));
+  bmsPrintln("dds: dischargeDisconnectSoc: " + String(dischargeDisconnectSoc));
+  bmsPrintln("ddt: dischargeDisconnectTemp: " + String(dischargeDisconnectTemp));
+  bmsPrintln("ddc: dischargeDisconnectCurrent: " + String(dischargeDisconnectCurrent));
+  bmsPrintln("cvm: calibrationVoltageMax: " + String(calibrationVoltageMax, 3));
+  bmsPrintln("cvn: calibrationVoltageMin: " + String(calibrationVoltageMin, 3));	
+  bmsPrintln("csm: calibrationHysteresisVoltage: " + String(calibrationHysteresisVoltage));
+  bmsPrintln("csm: calibrationSocMax: " + String(calibrationSocMax));
+  bmsPrintln("csn: calibrationSocMin: " + String(calibrationSocMin));	
+  bmsPrintln("pc: packCapacity: " + String(packCapacity));
+  bmsPrintln("ad: actualDischarge: " + String(actualDischarge));
+  bmsPrintln("sr: shuntResistance: " + String(shuntResistance, 8));	
+  bmsPrintln("ct: calibrationTime: " + String(calibrationTime));
 }
 
 
@@ -426,14 +471,14 @@ bool processMessage(String iMessage) {
     return true;
   }
 
-  if (message == "v") {
+  if (message == "v" || message == "?") {
     printCurrentValues();
     return false;
   }
 
   int delimiterPos = message.indexOf ("=");
   if (delimiterPos == -1) {
-    Serial.println("Format: parameter=value");
+    bmsPrintln("Format: parameter=value");
     return false;
   }
 
@@ -477,13 +522,13 @@ bool processMessage(String iMessage) {
   else parameterUnknown = true;
 
   if (parameterUnknown) {
-    Serial.println("Unknown parameter " + parameter + "; type ? for parameters.");
+    bmsPrintln("Unknown parameter " + parameter + "; type ? for parameters.");
     return false;
   }
 
-  Serial.println ("parameter " + parameter + " set to " + String(value, 6));
+  bmsPrintln ("parameter " + parameter + " set to " + String(value, 6));
   mustSendConfig = true;
-  return true;
+  return false;
 }
 
 
@@ -537,18 +582,11 @@ void T(String comment){
   timestamp = millis();
 }
 
+
 void testIna228() {
-  Serial.print("Discharge current: ");
-  Serial.print(ina228.readCurrent());
-  Serial.println(" mA");
-
-  Serial.print("Shunt Voltage: ");
-  Serial.print(String(ina228.readShuntVoltage(), 6));
-  Serial.println(" mV");
-
-  Serial.print("Charge: ");
-  Serial.print(String(ina228.readCharge(), 8));
-  Serial.println(" Ah");
+  bmsPrintln("Discharge current: " + String (ina228.readCurrent()) + " mA");
+  bmsPrintln("Shunt Voltage: " + String(ina228.readShuntVoltage(), 6) + " mV");
+  bmsPrintln("Charge: " + String(ina228.readCharge(), 8) + " Ah");
 }
 
 
@@ -727,24 +765,16 @@ void loop() {
 
   if (! digitalRead(BUTTON)) { // D6 low = 
     ina228.resetAcc();
-    Serial.println("Resetting accumulators");
+    bmsPrintln("Resetting accumulators");
   }
-
-  int packetSize = udp.parsePacket();
-  if (packetSize) {
-    // process udp packet received (e.g. echo "cds=101" | nc -u -w 1 10.10.10.129 33333)
-    char packet[255];
-    int len = udp.read(packet, 255);
-    if (len > 0)
-    {
-      packet[len] = '\0';
-      processMessage(String(packet));
-    }
- }
 
   if (Serial.available() > 0) {
     provideCli();
   }
   
-  delay(1000);
+  for (int i = 0; i < 10; i++) {
+    telnetLoop();
+    delay(100);
+  }
+
 }
