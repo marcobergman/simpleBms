@@ -74,7 +74,6 @@ const int LED = 2; // GPIO2 =  Wemos onboard LED
 const int BUTTON = 12; // GPIO12 = D6 button to ground to reset accumulator
 const unsigned int MAX_MESSAGE_LENGTH = 12;
 
-String bmsStatus = "OK";
 String chargeStatus = "";
 String dischargeStatus = "";
 
@@ -82,36 +81,29 @@ float voltage0 = 0; // defined here because needs to be set in setup()
 float voltage1 = 0;
 float voltage2 = 0;
 float voltage3 = 0;
-float packDischargeCurrent = 0;
-
-float maxCellVoltage = 0;
-float minCellVoltage = 0;
 
 WiFiClient client;
 WiFiUDP udp;
 ESPTelnet telnet;
-
-const String wifiStatus[8] = {"WL_IDLE_STATUS", "WL_NO_SSID_AVAIL", "unknown", "WL_CONNECTED", "WL_CONNECT_FAILED", "", "WL_CONNECT_WRONG_PASSWORD", "WL_DISCONNECTED"};
-
 Adafruit_ADS1115 ads;
 Adafruit_INA228 ina228 = Adafruit_INA228();
+
+const String wifiStatus[8] = {"WL_IDLE_STATUS", "WL_NO_SSID_AVAIL", "unknown", "WL_CONNECTED", "WL_CONNECT_FAILED", "", "WL_CONNECT_WRONG_PASSWORD", "WL_DISCONNECTED"};
 
 IPAddress signalkIp;
 bool x = signalkIp.fromString(signalkIpString);
 
 int i = 1; // metadata counter
 
+ESP8266Timer timer;
+#define TIMER_INTERVAL_MS 10000  // Call TimerHandler every 10 seconds
+int bmsClock = 0;
 bool mustSendConfig = false;
 bool mustTestWifi = false;
 bool mustWakeWifi = false;
 bool wifiAsleep = false;
 bool telnetStarted = false;
-
 bool capacitySet = false;
-
-ESP8266Timer timer;
-#define TIMER_INTERVAL_MS 10000  // Call TimerHandler every 10 seconds
-int bmsClock = 0;
 
 
 void IRAM_ATTR TimerHandler() {
@@ -139,14 +131,14 @@ void bmsPrintln (String str) {
   telnet.println(str);
 }
 
+void onTelnetConnect(String ip) {
+  telnet.println("\nSimpleBMS Serial CLI. {parameter=value | [q]uit | [v]alues} timeout 60s");
+}
+
 void onTelnetInput(String str) {
   if (processMessage (str)) {
     telnet.disconnectClient();
   };
-}
-
-void onTelnetConnect(String ip) {
-  telnet.println("\nSimpleBMS Serial CLI. {parameter=value | [q]uit | [v]alues} timeout 60s");
 }
 
 
@@ -191,8 +183,8 @@ packCapacity = 2.6; // Ah
 
   bool x = timer.attachInterruptInterval(TIMER_INTERVAL_MS * 1000, TimerHandler);
 
-  telnet.onInputReceived(onTelnetInput);
   telnet.onConnect(onTelnetConnect);
+  telnet.onInputReceived(onTelnetInput);
 
   Serial.println("Setup completed");
 }
@@ -201,10 +193,10 @@ packCapacity = 2.6; // Ah
 void telnetLoop() {
   if (WiFi.status() == WL_CONNECTED && !telnetStarted) {
     if (telnet.begin(telnetServerSocket)) {
-      Serial.println("Telnet listener running.");
+      Serial.println("Telnet listener running");
       telnetStarted = true;
     } else {
-      Serial.println("Telnet listener error.");
+      Serial.println("Telnet listener error");
     }
   }
   telnet.loop();
@@ -243,7 +235,7 @@ void testWifi() {
 
 
 void wakeWifi() {
-  Serial.println ("Wifi waking up.");
+  Serial.println ("Wifi waking up");
   WiFi.forceSleepWake();
   wifiAsleep = false;
   bmsClock = 5;
@@ -263,7 +255,7 @@ void sendSignalkMessage (String message) {
 
 void sendBmsConfig () {
   // send configuration parameters to SignalK
-  Serial.println ("Sending BMS config parameters.");
+  Serial.println ("Sending BMS config parameters");
   String value = "{";
   value = value  + "\"chargeDisconnectVoltage\": " + String(chargeDisconnectVoltage) +", ";
   value = value  + "\"chargeDisconnectSoc\": " + String(chargeDisconnectSoc) +", ";
@@ -339,7 +331,7 @@ float readPackDischargeCurrent() {
 }
 
 
-void checkCalibration() {
+void checkCalibration(float minCellVoltage, float maxCellVoltage, float packDischargeCurrent) {
   if (maxCellVoltage > calibrationVoltageMax && packDischargeCurrent > 0) { // not charging
     ina228.resetAcc(); // Reset accumulator registers on the INA228: "reset the on-chip coulomb counter"
     bmsPrintln("Defining pack to be at " + String(calibrationSocMax) + " %.");
@@ -604,14 +596,14 @@ void loop() {
   float cell2Voltage = voltage2 - voltage1;
   float cell3Voltage = voltage3 - voltage2;
 
-  maxCellVoltage = maxVoltage(cell0Voltage, cell1Voltage, cell2Voltage, cell3Voltage);
-  minCellVoltage = minVoltage(cell0Voltage, cell1Voltage, cell2Voltage, cell3Voltage);
+  float maxCellVoltage = maxVoltage(cell0Voltage, cell1Voltage, cell2Voltage, cell3Voltage);
+  float minCellVoltage = minVoltage(cell0Voltage, cell1Voltage, cell2Voltage, cell3Voltage);
 
   float packSoc = readPackSoc();
   float packTemp = readPackTemp();
-  packDischargeCurrent = readPackDischargeCurrent();
+  float packDischargeCurrent = readPackDischargeCurrent();
 
-  checkCalibration();
+  checkCalibration(minCellVoltage, maxCellVoltage, packDischargeCurrent);
 
   // Charge reconnect
   if (chargeStatus == "chargeDisconnectVoltage" && maxCellVoltage < chargeReconnectVoltage ) {
@@ -736,7 +728,7 @@ void loop() {
     setRelais(DISCHARGERELAIS, CONNECT);
   }
 
-  bmsStatus = chargeStatus + dischargeStatus;
+  String bmsStatus = chargeStatus + dischargeStatus;
 
   Serial.println ("adc[0] = " + String(cell0Voltage, 6) + "; bmsStatus = " + bmsStatus); // + "\r"
 
