@@ -72,10 +72,11 @@ const int DISCONNECT = 0;
 
 const int LED = 2; // GPIO2 =  Wemos onboard LED
 const int BUTTON = 12; // GPIO12 = D6 button to ground to reset accumulator
-const unsigned int MAX_MESSAGE_LENGTH = 12;
+const unsigned int MAX_MESSAGE_LENGTH = 25;
 
 String chargeStatus = "";
 String dischargeStatus = "";
+String previousBmsStatus = "";
 
 float voltage0 = 0; // defined here because needs to be set in setup()
 float voltage1 = 0;
@@ -104,6 +105,7 @@ bool mustWakeWifi = false;
 bool wifiAsleep = false;
 bool telnetStarted = false;
 bool capacitySet = false;
+unsigned long timeOffset = 0;
 
 
 void IRAM_ATTR TimerHandler() {
@@ -215,8 +217,8 @@ void testWifi() {
     return;
   }
   if (WiFi.status() == WL_CONNECTED) {
-    Serial.print ("Wifi connected with IP address ");
-    Serial.println (WiFi.localIP());
+    //Serial.print ("Wifi connected with IP address ");
+    //Serial.println (WiFi.localIP());
   }
   else if (WiFi.status() == WL_NO_SSID_AVAIL) {
     Serial.println ("Wifi base station not found. Wifi going to sleep to preserve energy.");
@@ -255,7 +257,7 @@ void sendSignalkMessage (String message) {
 
 void sendBmsConfig () {
   // send configuration parameters to SignalK
-  Serial.println ("Sending BMS config parameters");
+  // Serial.println ("Sending BMS config parameters");
   String value = "{";
   value = value  + "\"chargeDisconnectVoltage\": " + String(chargeDisconnectVoltage) +", ";
   value = value  + "\"chargeDisconnectSoc\": " + String(chargeDisconnectSoc) +", ";
@@ -454,6 +456,7 @@ bool processMessage(String iMessage) {
   if (message.endsWith("\n")) {
     message.remove(message.length()-1, 1); 
   }
+
   if (message == "") {
     return false;
   }
@@ -477,40 +480,41 @@ bool processMessage(String iMessage) {
   // split message into parameter and value
   String parameter = message.substring(0, delimiterPos);
   parameter.toLowerCase();
-  float value = message.substring(delimiterPos+1).toFloat();
+  String value = message.substring(delimiterPos+1);
   bool parameterUnknown = false;
 	
-  if      (parameter == "cdv") chargeDisconnectVoltage = value;
-  else if (parameter == "cds") chargeDisconnectSoc = value;
-  else if (parameter == "cdt") chargeDisconnectTemp = value;
-  else if (parameter == "crv") chargeReconnectVoltage = value;
-  else if (parameter == "crs") chargeReconnectSoc = value;
-  else if (parameter == "crt") chargeReconnectTemp = value;
-  else if (parameter == "crc") chargeReconnectCurrent = value;
-  else if (parameter == "cav") chargeAlarmVoltage = value;
-  else if (parameter == "cas") chargeAlarmSoc = value;
-  else if (parameter == "cat") chargeAlarmTemp = value;
-  else if (parameter == "cac") chargeAlarmCurrent = value;
-  else if (parameter == "dav") dischargeAlarmVoltage = value;
-  else if (parameter == "das") dischargeAlarmSoc = value;
-  else if (parameter == "dat") dischargeAlarmTemp = value;
-  else if (parameter == "dac") dischargeAlarmCurrent = value;
-  else if (parameter == "drv") dischargeReconnectVoltage = value;
-  else if (parameter == "drs") dischargeReconnectSoc = value;
-  else if (parameter == "drt") dischargeReconnectTemp = value;
-  else if (parameter == "ddv") dischargeDisconnectVoltage = value;
-  else if (parameter == "dds") dischargeDisconnectSoc = value;
-  else if (parameter == "ddt") dischargeDisconnectTemp = value;
-  else if (parameter == "ddc") dischargeDisconnectCurrent = value;
-  else if (parameter == "cvm") calibrationVoltageMax = value;
-  else if (parameter == "cvn") calibrationVoltageMin = value;
-  else if (parameter == "chv") calibrationHysteresisVoltage = value;
-  else if (parameter == "csm") calibrationSocMax = value;
-  else if (parameter == "csn") calibrationSocMin = value;
-  else if (parameter == "pc") packCapacity = value;
-  else if (parameter == "ad") actualDischarge = value;
-  else if (parameter == "sr") { shuntResistance = value; ina228.setShunt(shuntResistance, 10.0);}
-  else if (parameter == "ct") calibrationTime = value;
+  if      (parameter == "cdv") chargeDisconnectVoltage = value.toFloat();
+  else if (parameter == "cds") chargeDisconnectSoc = value.toFloat();
+  else if (parameter == "cdt") chargeDisconnectTemp = value.toFloat();
+  else if (parameter == "crv") chargeReconnectVoltage = value.toFloat();
+  else if (parameter == "crs") chargeReconnectSoc = value.toFloat();
+  else if (parameter == "crt") chargeReconnectTemp = value.toFloat();
+  else if (parameter == "crc") chargeReconnectCurrent = value.toFloat();
+  else if (parameter == "cav") chargeAlarmVoltage = value.toFloat();
+  else if (parameter == "cas") chargeAlarmSoc = value.toFloat();
+  else if (parameter == "cat") chargeAlarmTemp = value.toFloat();
+  else if (parameter == "cac") chargeAlarmCurrent = value.toFloat();
+  else if (parameter == "dav") dischargeAlarmVoltage = value.toFloat();
+  else if (parameter == "das") dischargeAlarmSoc = value.toFloat();
+  else if (parameter == "dat") dischargeAlarmTemp = value.toFloat();
+  else if (parameter == "dac") dischargeAlarmCurrent = value.toFloat();
+  else if (parameter == "drv") dischargeReconnectVoltage = value.toFloat();
+  else if (parameter == "drs") dischargeReconnectSoc = value.toFloat();
+  else if (parameter == "drt") dischargeReconnectTemp = value.toFloat();
+  else if (parameter == "ddv") dischargeDisconnectVoltage = value.toFloat();
+  else if (parameter == "dds") dischargeDisconnectSoc = value.toFloat();
+  else if (parameter == "ddt") dischargeDisconnectTemp = value.toFloat();
+  else if (parameter == "ddc") dischargeDisconnectCurrent = value.toFloat();
+  else if (parameter == "cvm") calibrationVoltageMax = value.toFloat();
+  else if (parameter == "cvn") calibrationVoltageMin = value.toFloat();
+  else if (parameter == "chv") calibrationHysteresisVoltage = value.toFloat();
+  else if (parameter == "csm") calibrationSocMax = value.toFloat();
+  else if (parameter == "csn") calibrationSocMin = value.toFloat();
+  else if (parameter == "pc") packCapacity = value.toFloat();
+  else if (parameter == "ad") actualDischarge = value.toFloat();
+  else if (parameter == "sr") { shuntResistance = value.toFloat(); ina228.setShunt(shuntResistance, 10.0);}
+  else if (parameter == "ct") calibrationTime = value.toFloat();
+  else if (parameter == "time") setTime(value);
   else parameterUnknown = true;
 
   if (parameterUnknown) {
@@ -518,7 +522,7 @@ bool processMessage(String iMessage) {
     return false;
   }
 
-  bmsPrintln ("parameter " + parameter + " set to " + String(value, 6));
+  bmsPrintln ("parameter " + parameter + " set to " + value);
   mustSendConfig = true;
   return false;
 }
@@ -563,6 +567,29 @@ void provideCli() {
       }
     }
   }
+}
+
+
+void setTime(String timeString) {
+  int hours = timeString.substring(0, 2).toInt();
+  int minutes = timeString.substring(3, 5).toInt();
+  int seconds = timeString.substring(6, 8).toInt();
+  timeOffset = seconds * 1000 + minutes * 60 * 1000 + hours * 60 * 60 * 1000 - millis();
+}
+
+String now() {
+  unsigned long currentMillis = millis() + timeOffset;
+  unsigned long seconds = currentMillis / 1000;
+  unsigned long minutes = seconds / 60;
+  unsigned long hours = minutes / 60;
+  unsigned long days = hours / 24;
+  currentMillis %= 1000;
+  seconds %= 60;
+  minutes %= 60;
+  hours %= 24;
+  char s[25];
+  sprintf(s, "%02d:%02d:%02d", hours, minutes, seconds);
+  return (String(s));
 }
 
 
@@ -728,9 +755,14 @@ void loop() {
     setRelais(DISCHARGERELAIS, CONNECT);
   }
 
-  String bmsStatus = chargeStatus + dischargeStatus;
+  String bmsStatus = chargeStatus + " " + dischargeStatus;
 
-  Serial.println ("adc[0] = " + String(cell0Voltage, 6) + "; bmsStatus = " + bmsStatus); // + "\r"
+  if (bmsStatus != previousBmsStatus) {
+    bmsPrintln(now() + " " + bmsStatus + " " + String(cell0Voltage, 3) + " " + String(cell1Voltage, 3) + " " + String(cell2Voltage, 3) + " " + String(cell3Voltage, 3));
+    previousBmsStatus = bmsStatus;
+  }
+
+  // Serial.println (now() + " adc[0] = " + String(cell0Voltage, 6) + "; bmsStatus = " + bmsStatus); // + "\r"
 
   sendCellVoltages(cell0Voltage, cell1Voltage, cell2Voltage, cell3Voltage);
 
