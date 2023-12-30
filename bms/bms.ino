@@ -12,6 +12,8 @@
 #include <Adafruit_ADS1X15.h>
 #include <Adafruit_INA228.h>
 #include "ESPTelnet.h"
+#include <OneWire.h>
+#include <DallasTemperature.h>
 
 // User configuration starts here
 String wifiSsid        =  "openplotter";
@@ -62,6 +64,7 @@ float calibrationSocMin = 17;
 float packCapacity = 280; // Ah
 float actualDischarge = 0; // Ah
 float shuntResistance = 0.000947; // Ohm
+float maxShuntCurrent = 10.0;
 // User configuration ends here
 
 // For setRelais():
@@ -78,16 +81,13 @@ String chargeStatus = "";
 String dischargeStatus = "";
 String previousBmsStatus = "";
 
-float voltage0 = 0; // defined here because needs to be set in setup()
-float voltage1 = 0;
-float voltage2 = 0;
-float voltage3 = 0;
-
 WiFiClient client;
 WiFiUDP udp;
 ESPTelnet telnet;
 Adafruit_ADS1115 ads;
 Adafruit_INA228 ina228 = Adafruit_INA228();
+OneWire oneWire(0); // D3 = GPIO0
+DallasTemperature tempSensors(&oneWire);
 
 const String wifiStatus[8] = {"WL_IDLE_STATUS", "WL_NO_SSID_AVAIL", "unknown", "WL_CONNECTED", "WL_CONNECT_FAILED", "", "WL_CONNECT_WRONG_PASSWORD", "WL_DISCONNECTED"};
 
@@ -134,7 +134,7 @@ void bmsPrintln (String str) {
 }
 
 void onTelnetConnect(String ip) {
-  telnet.println("\nSimpleBMS Serial CLI. {parameter=value | [q]uit | [v]alues} timeout 60s");
+  telnet.println("\nSimpleBMS Telnet CLI. {parameter=value | [q]uit | [v]alues}");
 }
 
 void onTelnetInput(String str) {
@@ -157,7 +157,6 @@ calibrationVoltageMin = 3.50;
 calibrationSocMin = 10;
 packCapacity = 2.6; // Ah
 
-
   Serial.begin(115200);
   while (!Serial) {
     delay(10);
@@ -170,19 +169,18 @@ packCapacity = 2.6; // Ah
   pinMode(BUTTON, INPUT_PULLUP); // pulling down D6 resets CHARGE
   ads.setGain(GAIN_TWO);
   ads.begin();
-  delay(100);
-  voltage0 = readVoltage(0);
-  voltage1 = readVoltage(1);
-  voltage2 = readVoltage(2);
-  voltage3 = readVoltage(3);
 
   if (!ina228.begin()) {
     Serial.println("Couldn't find INA228 chip");
     while (1)
       ;
   }
-  ina228.setShunt(shuntResistance, 10.0);
+  ina228.setShunt(shuntResistance, maxShuntCurrent);
 
+  tempSensors.begin();
+  tempSensors.setResolution(9);
+  tempSensors.setWaitForConversion(false);
+  
   bool x = timer.attachInterruptInterval(TIMER_INTERVAL_MS * 1000, TimerHandler);
 
   telnet.onConnect(onTelnetConnect);
@@ -351,8 +349,18 @@ void checkCalibration(float minCellVoltage, float maxCellVoltage, float packDisc
 
 float readPackTemp() {
   // temporary, awaiting temp sensors
-  return ina228.readDieTemp();
+  // return ina228.readDieTemp();
+  float tempC = tempSensors.getTempCByIndex(0); // get current temperature value
+  tempSensors.requestTemperaturesByIndex(0); // initiate next conversion, but don't wait for it
+
+  if (tempC != DEVICE_DISCONNECTED_C)
+    return tempC;
+  else 
+    Serial.println("Error: Could not read temperature data");
+  
+  return 10;
 }
+
 
 float readVoltage(int index) {
   // Read voltage from a particular cell and apply calibration
@@ -512,7 +520,7 @@ bool processMessage(String iMessage) {
   else if (parameter == "csn") calibrationSocMin = value.toFloat();
   else if (parameter == "pc") packCapacity = value.toFloat();
   else if (parameter == "ad") actualDischarge = value.toFloat();
-  else if (parameter == "sr") { shuntResistance = value.toFloat(); ina228.setShunt(shuntResistance, 10.0);}
+  else if (parameter == "sr") { shuntResistance = value.toFloat(); ina228.setShunt(shuntResistance, maxShuntCurrent);}
   else if (parameter == "ct") calibrationTime = value.toFloat();
   else if (parameter == "time") setTime(value);
   else parameterUnknown = true;
@@ -528,7 +536,7 @@ bool processMessage(String iMessage) {
 }
 
 
-void provideCli() {
+void provideSerialCli() {
   // Stop processing for a while (60 sec timeout) and provide a command line interface to change parameters
   // Activate: any character
   // Arduino IDE Serial Monitor "Carriage Return"
@@ -571,19 +579,21 @@ void provideCli() {
 
 
 void setTime(String timeString) {
+  // set the clock time to timeString by calculating an offset from the millis()
   int hours = timeString.substring(0, 2).toInt();
   int minutes = timeString.substring(3, 5).toInt();
   int seconds = timeString.substring(6, 8).toInt();
   timeOffset = seconds * 1000 + minutes * 60 * 1000 + hours * 60 * 60 * 1000 - millis();
 }
 
+
 String now() {
+  // return a string that denotes the current time of day, e.g. "16:48:12"
   unsigned long currentMillis = millis() + timeOffset;
   unsigned long seconds = currentMillis / 1000;
   unsigned long minutes = seconds / 60;
   unsigned long hours = minutes / 60;
   unsigned long days = hours / 24;
-  currentMillis %= 1000;
   seconds %= 60;
   minutes %= 60;
   hours %= 24;
@@ -604,8 +614,9 @@ void T(String comment){
 
 void testIna228() {
   bmsPrintln("Discharge current: " + String (ina228.readCurrent()) + " mA");
-  bmsPrintln("Shunt Voltage: " + String(ina228.readShuntVoltage(), 6) + " mV");
+  bmsPrintln("Shunt voltage: " + String(ina228.readShuntVoltage(), 6) + " mV");
   bmsPrintln("Charge: " + String(ina228.readCharge(), 8) + " Ah");
+  bmsPrintln("Bus voltage: " + String(ina228.readBusVoltage(), 8) + " mV");
 }
 
 
@@ -613,12 +624,13 @@ void loop() {
   const float dampingFactor = 0.8;
 
   // each measurement takes 32ms:
-  voltage0 = readVoltage(0);
-  voltage1 = readVoltage(1);
-  voltage2 = readVoltage(2);
-  voltage3 = readVoltage(3);
+  float voltageGnd = ina228.readBusVoltage() / 1000; //as the readout is in mV
+  float voltage0 = readVoltage(0);
+  float voltage1 = readVoltage(1);
+  float voltage2 = readVoltage(2);
+  float voltage3 = readVoltage(3);
 
-  float cell0Voltage = voltage0;
+  float cell0Voltage = voltage0 - voltageGnd;
   float cell1Voltage = voltage1 - voltage0;
   float cell2Voltage = voltage2 - voltage1;
   float cell3Voltage = voltage3 - voltage2;
@@ -793,12 +805,13 @@ void loop() {
   }
 
   if (Serial.available() > 0) {
-    provideCli();
+    provideSerialCli();
   }
   
   for (int i = 0; i < 10; i++) {
     telnetLoop();
     delay(100);
   }
+
 
 }
