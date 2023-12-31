@@ -31,7 +31,7 @@ float value0V[4] = {2, 1, 1, 1};
 float valueRef[4] = {14408, 14513, 14550, 14524};
 
 // BMS parameters
-float chargeDisconnectVoltage = 3.6;
+float chargeDisconnectVoltage = 3.65;         // LF280K specs Ch. 3.4
 float chargeDisconnectSoc = 90;
 float chargeDisconnectTemp = 3;
 float chargeDisconnectCurrent = 30;
@@ -47,24 +47,24 @@ float dischargeAlarmVoltage = 3.25;
 float dischargeAlarmSoc = 25;
 float dischargeAlarmTemp = 50;
 float dischargeAlarmCurrent = 50;
-float dischargeReconnectVoltage = 3.2;
+float dischargeReconnectVoltage = 2.6;
 float dischargeReconnectSoc = 30;
 float dischargeReconnectTemp = 60;
 String dischargeReconnectCurrent = "MANUAL";
-float dischargeDisconnectVoltage = 3.1;
+float dischargeDisconnectVoltage = 2.5;        // LF280K specs Ch. 3.4
 float dischargeDisconnectSoc = 20;
 float dischargeDisconnectTemp = 70;
 float dischargeDisconnectCurrent = 60;
 
-float calibrationVoltageMax = 3.70;
-float calibrationVoltageMin = 3.20;
+float calibrationVoltageMax = 3.35;            // LF280K specs Appendix V
+float calibrationVoltageMin = 3.16;            // LF280K specs Appendix V
 float calibrationHysteresisVoltage = 0.1;
-float calibrationSocMax = 100;
-float calibrationSocMin = 17;
+float calibrationSocMax = 100;                 // LF280K specs Appendix V
+float calibrationSocMin = 10;                  // LF280K specs Appendix V
 float packCapacity = 280; // Ah
 float actualDischarge = 0; // Ah
 float shuntResistance = 0.000947; // Ohm
-float maxShuntCurrent = 10.0;
+float maxShuntCurrent = 80.0;
 // User configuration ends here
 
 // For setRelais():
