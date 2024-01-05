@@ -63,7 +63,7 @@ float calibrationSocMax = 100;                 // LF280K specs Appendix V
 float calibrationSocMin = 10;                  // LF280K specs Appendix V
 float packCapacity = 280; // Ah
 float actualDischarge = 0; // Ah
-float shuntResistance = 0.000947; // Ohm
+float shuntResistance = 0.0006986; // Ohm
 float maxShuntCurrent = 80.0;
 // User configuration ends here
 
@@ -145,18 +145,6 @@ void onTelnetInput(String str) {
 
 
 void setup() {
-//TEMPORARY: TEST WITH 18650 cell pack
-chargeDisconnectVoltage = 4.2;
-chargeReconnectVoltage = 4.1;
-chargeAlarmVoltage = 4.05;
-dischargeAlarmVoltage = 3.75;
-dischargeReconnectVoltage = 3.7;
-dischargeDisconnectVoltage = 3.6;
-calibrationVoltageMax = 4.17;
-calibrationVoltageMin = 3.50;
-calibrationSocMin = 10;
-packCapacity = 2.6; // Ah
-
   Serial.begin(115200);
   while (!Serial) {
     delay(10);
@@ -193,7 +181,7 @@ packCapacity = 2.6; // Ah
 void telnetLoop() {
   if (WiFi.status() == WL_CONNECTED && !telnetStarted) {
     if (telnet.begin(telnetServerSocket)) {
-      Serial.println("Telnet listener running");
+      Serial.println(now() + " Telnet listener running");
       telnetStarted = true;
     } else {
       Serial.println("Telnet listener error");
@@ -334,12 +322,12 @@ float readPackDischargeCurrent() {
 void checkCalibration(float minCellVoltage, float maxCellVoltage, float packDischargeCurrent) {
   if (maxCellVoltage > calibrationVoltageMax && packDischargeCurrent > 0) { // not charging
     ina228.resetAcc(); // Reset accumulator registers on the INA228: "reset the on-chip coulomb counter"
-    bmsPrintln("Defining pack to be at " + String(calibrationSocMax) + " %.");
+    bmsPrintln(now() + " Defining pack to be at " + String(calibrationSocMax) + " %.");
   }
   if (minCellVoltage < calibrationVoltageMin && packDischargeCurrent > 0 && !capacitySet) { // not charging
     packCapacity = actualDischarge / (calibrationSocMax - calibrationSocMin) * 100;
     capacitySet = true; 
-    bmsPrintln("Setting packCapacity to " + String (packCapacity, 1) + "Ah.");
+    bmsPrintln(now() + " Setting packCapacity to " + String (packCapacity, 1) + "Ah.");
   }
   if (minCellVoltage > calibrationVoltageMin + calibrationHysteresisVoltage && packDischargeCurrent > 0 && capacitySet) {
     capacitySet = false;
@@ -530,7 +518,7 @@ bool processMessage(String iMessage) {
     return false;
   }
 
-  bmsPrintln ("parameter " + parameter + " set to " + value);
+  bmsPrintln (now() + " Parameter " + parameter + " set to " + value);
   mustSendConfig = true;
   return false;
 }
