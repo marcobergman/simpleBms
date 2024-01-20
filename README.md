@@ -33,3 +33,6 @@ The first version of the wemos sketch has been uploaded to this repository. The 
 
 
 ![image](https://github.com/marcobergman/simpleBms/assets/17980560/215802b8-0af5-44dc-aab4-a0f2c393f870)
+
+![image](https://github.com/marcobergman/simpleBms/assets/17980560/cbe0d52e-4cbe-48df-8731-6d02ab77471f)
+
